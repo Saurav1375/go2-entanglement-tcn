@@ -1,0 +1,17 @@
+# Runtime Python dependencies for the Unitree GO2 (Python 3.8, CPU-only).
+# Install INTO the robot's ROS 2 Python environment (the same interpreter that
+# runs rclpy). No pandas / scikit-learn / scipy / matplotlib / torch required.
+
+# numpy: pin < 1.25 for Python 3.8 (numpy >= 1.25 needs Python 3.9+).
+numpy>=1.19,<1.25
+
+# ONNX Runtime (CPU). Recommended backend — small, fast, no full PyTorch.
+# On x86_64 / generic aarch64 the pip wheel works; on Jetson see SETUP_GO2.md.
+onnxruntime>=1.12,<1.17
+
+# Config parsing (usually already present in a ROS 2 install).
+PyYAML>=5.3
+
+# --- Optional: only if you choose the TorchScript backend instead of ONNX ---
+# (set model_path: models/entanglement_tcn_ts.pt in config.yaml)
+# torch>=1.10        # heavier; ONNX Runtime is preferred on the GO2

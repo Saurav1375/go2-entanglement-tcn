@@ -1,0 +1,13 @@
+# Normalize line endings to LF in the repo; check out native on each platform.
+* text=auto eol=lf
+
+# Data and docs are text
+*.csv text eol=lf
+*.md  text
+*.py  text eol=lf
+
+# Binary artifacts (when present) — never diff/merge as text
+*.pt  binary
+*.pth binary
+*.onnx binary
+*.png binary

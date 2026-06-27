@@ -1,0 +1,48 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Claude Code local settings ----
+.claude/
+
+# ---- Generated / derived data (regenerate from csv/ + label/) ----
+# csv/ (raw) and label/ (annotations) ARE committed; these are derived:
+csv_normalized/
+csv_labelled/
+plots/
+
+# ---- Generated ML artifacts (regenerate via training/evaluation) ----
+# Trained weights, calibration params, metrics, replay plots, logs.
+ml/artifacts/
+*.pt
+*.pth
+*.onnx
+*.log
+
+# Keep curated result writeups under docs/ (committed); the live copies
+# regenerated into ml/artifacts/ are ignored by the rule above.
+
+# ---- Deployment package models ARE committed (robot_package must be self-contained) ----
+!robot_package/src/entanglement_detector/models/
+!robot_package/src/entanglement_detector/models/*.onnx
+!robot_package/src/entanglement_detector/models/*.pt
+!robot_package/src/entanglement_detector/models/*.json
+

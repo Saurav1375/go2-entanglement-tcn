@@ -1,0 +1,31 @@
+# Configuration for the GO2 leg-entanglement detector node.
+# Paths may be absolute, or relative to the installed package share directory
+# (the node resolves relative paths against <share>/entanglement_detector/).
+
+entanglement_detector:
+  ros__parameters:
+    # ---- model + calibration artifacts ----
+    # Use the ONNX model for CPU-only inference (recommended on the GO2).
+    # Switch to "models/entanglement_tcn_ts.pt" to use the TorchScript backend.
+    model_path: "models/entanglement_tcn.onnx"
+    normalize_path: "models/normalize.json"
+    intensity_calib_path: "models/intensity_calib.json"
+    # temperature is read from this calibration file (key: "temperature")
+    calibration_path: "models/calibration.json"
+
+    # ---- operating point (from the research IMPROVEMENTS.md) ----
+    detection_threshold: 0.9999        # RAW probability threshold for the alarm latch
+    debounce_ms: 75                    # sustained-detection window before latching (50-75 ms)
+    leg_thresholds:                    # per-leg probability to name the alarm leg
+      FR: 0.5
+      FL: 0.5
+      RR: 0.9                          # raised to curb RR false positives
+      RL: 0.5
+    intensity_blend: 0.5               # 0.5*model_head + 0.5*physics
+
+    # ---- ROS / runtime ----
+    lowstate_topic: "/lowstate"
+    output_topic: "/entanglement_state"
+    num_threads: 1                     # CPU inference threads (1 is enough; keeps latency low)
+    publish_every_n: 1                 # publish on every Nth /lowstate sample (decimate if CPU-bound)
+    log_every_n: 250                   # throttle info logging (0 = silent)

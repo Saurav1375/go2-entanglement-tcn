@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>entanglement_detector</name>
+  <version>1.0.0</version>
+  <description>Real-time leg-entanglement detector for the Unitree GO2 (multi-task causal TCN).</description>
+  <maintainer email="sauravgupta1375@gmail.com">Saurav Gupta</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>entanglement_interfaces</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- Unitree GO2 lowstate messages (provided by the robot's ROS 2 environment) -->
+  <exec_depend>unitree_go</exec_depend>
+  <!-- Python runtime deps (numpy, onnxruntime) are installed via requirements_robot.txt -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
