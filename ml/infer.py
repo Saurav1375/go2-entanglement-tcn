@@ -45,6 +45,8 @@ class InferenceEngine:
         self.device = device
         self.intensity_blend = intensity_blend
         self.raw_names = C.raw_channel_names()
+        self._dq_idx = [self.raw_names.index(f"{leg}_{j}_dq")
+                        for leg in C.LEG_ORDER for j in C.JOINT_ORDER]
         self.buf: deque = deque(maxlen=C.WINDOW_SAMPLES)
 
         # Recommended operating point (post-hoc; written by improvements.py). Defaults are
@@ -55,7 +57,14 @@ class InferenceEngine:
         self.det_threshold = float(op.get("detection_threshold_raw", 0.5))
         self.debounce_k = max(1, round(op.get("debounce_ms", 0) / 1000 * C.TARGET_HZ))
         self.leg_thresholds = op.get("leg_thresholds", {})
+        # ---- stationarity (Stop/Lock) gate; disabled by default (thresh 0 -> never fires) ----
+        self.stationary_dq_thresh = float(op.get("stationary_dq_thresh", 0.0))
+        self.stationary_min_k = max(1, round(op.get("stationary_min_ms", 100) / 1000 * C.TARGET_HZ))
+        self._stabilize_k = max(0, round(op.get("stabilize_ms", 0) / 1000 * C.TARGET_HZ))
         self._run = 0  # consecutive above-threshold windows (debounce state)
+        self._stationary_run = 0
+        self._reset_armed = False
+        self._stabilize_left = 0
 
     @classmethod
     def from_artifacts(cls, device: str = "cpu", intensity_blend: float = 0.5):
@@ -70,11 +79,30 @@ class InferenceEngine:
     def reset(self):
         self.buf.clear()
         self._run = 0
+        self._stationary_run = 0
+        self._reset_armed = False
+        self._stabilize_left = 0
 
     @torch.no_grad()
     def push(self, sample: dict) -> dict | None:
         """Feed one timestep. Returns a prediction dict, or None until the buffer fills."""
-        self.buf.append([float(sample[name]) for name in self.raw_names])
+        row = [float(sample[name]) for name in self.raw_names]
+        # stationarity (Stop/Lock) gate — edge-triggered reset of stale temporal context;
+        # disabled when stationary_dq_thresh == 0 (default) so equivalence/validation hold.
+        if self.stationary_dq_thresh > 0.0:
+            mean_abs_dq = sum(abs(row[i]) for i in self._dq_idx) / len(self._dq_idx)
+            if mean_abs_dq < self.stationary_dq_thresh:
+                self._stationary_run += 1
+                if self._stationary_run == self.stationary_min_k:
+                    self.buf.clear(); self._run = 0; self._reset_armed = True
+            else:
+                if self._stationary_run >= self.stationary_min_k:
+                    self._stabilize_left = self._stabilize_k
+                self._stationary_run = 0
+                self._reset_armed = False
+                if self._stabilize_left > 0:
+                    self._stabilize_left -= 1
+        self.buf.append(row)
         if len(self.buf) < C.WINDOW_SAMPLES:
             return None
 
@@ -102,7 +130,7 @@ class InferenceEngine:
         # entanglement -> latches reliably); p_bin_cal is the reported confidence only
         above = p_bin >= self.det_threshold
         self._run = self._run + 1 if above else 0
-        alarm = self._run >= self.debounce_k
+        alarm = (self._run >= self.debounce_k) and (self._stabilize_left == 0)
 
         # alarm leg using per-leg thresholds (RR raised to curb its false positives)
         alarm_leg = None

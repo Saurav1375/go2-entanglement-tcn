@@ -20,7 +20,7 @@ ALL 20 recordings under artifacts/plots/.
 
 Run:
     python -m dataset.ml.report            # full report (fixed split + heuristic + all plots + LORO)
-    python -m dataset.ml.report --no-loro  # skip the 12-fold retraining
+    python -m dataset.ml.report --no-loro  # skip the LORO retraining
     python -m dataset.ml.report --loro-epochs 20
 """
 from __future__ import annotations
@@ -322,8 +322,8 @@ def main(do_loro=True, loro_epochs=20):
     w(f"- **Persistence-gated alarm**: requires {PERSIST_K} consecutive windows ≥ threshold.")
     w("- **Per-leg P/R/F1**: per-leg prob ≥ 0.5 vs filename-derived affected legs, over all TEST windows.")
     w("- **Exact-match**: predicted leg-set == true leg-set, on truly-Entangled windows only.")
-    w("- **Fixed split** = train on 13 / val on 3 / test on 4 recordings (leakage-safe, by recording). "
-      "**LORO** = leave-one-positive-recording-out CV over the 12 positive events; each held-out file "
+    w("- **Fixed split** = leakage-safe split grouped by recording (sizes from config.SPLIT). "
+      "**LORO** = leave-one-positive-recording-out CV over config.POSITIVE_FILES; each held-out file "
       "is scored with its own VAL-style threshold from its walking prefix.")
 
     # ============ 0. Internal consistency checks ============

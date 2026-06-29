@@ -94,19 +94,35 @@ def parse_legs(filename: str) -> set[str]:
 
 
 # ---------------------------------------------------------------- fixed leakage-safe split
+# v2 adds 5 GO2 deployment recordings (Lock/Stop/backward-walk + a dedicated front-right
+# entanglement). Each recording lives in exactly one split (leakage-safe, grouped by file).
+#   front_right_wire -> TRAIN  (so the SHIPPED model learns dedicated FR; held-out FR via LORO)
+#   walk_stop_back   -> TRAIN  (teaches backward-Walking + Lock + Stop negatives)
+#   back_right_intensity -> TRAIN (RR positive whose post-event Lock is a key negative)
+#   back_right_stop  -> VAL    (RR positive; entanglement-while-standing case)
+#   lock_stop        -> TEST   (held-out pure stand-up->Lock: clean Lock false-alarm measure)
 SPLIT = {
-    "test": ["back_left_hand2", "back_right_wire1", "front_left_hand2", "front_both_wire2"],
-    "val":  ["back_both_wire2", "back_right_hand2", "walking4"],
+    "test": ["back_left_hand2", "back_right_wire1", "front_left_hand2", "front_both_wire2",
+             "go2_lowstate_lock_stop"],
+    "val":  ["back_both_wire2", "back_right_hand2", "walking4",
+             "go2_lowstate_entaglement_back_right_stop"],
     "train": ["back_both_wire1", "back_left_hand1", "back_left_wire1", "back_right_hand1",
               "front_both_wire1", "front_left_hand1",
-              "stop1", "stop2", "stop3", "walking1", "walking2", "walking3", "walking5"],
+              "stop1", "stop2", "stop3", "walking1", "walking2", "walking3", "walking5",
+              "go2_lowstate_entaglement_front_right_wire",
+              "go2_lowstate_entaglement_back_right_intensity",
+              "go2_lowstate_walk_stop_back"],
 }
 
-# The 12 positive recordings (one contiguous Entangled event each) for LORO-CV.
+# The 15 positive recordings (one contiguous Entangled event each) for LORO-CV.
+# (The 3 new positives add the first dedicated front-right event and two RR events.)
 POSITIVE_FILES = [
     "back_both_wire1", "back_both_wire2", "back_left_hand1", "back_left_hand2",
     "back_left_wire1", "back_right_hand1", "back_right_hand2", "back_right_wire1",
     "front_both_wire1", "front_both_wire2", "front_left_hand1", "front_left_hand2",
+    "go2_lowstate_entaglement_front_right_wire",
+    "go2_lowstate_entaglement_back_right_stop",
+    "go2_lowstate_entaglement_back_right_intensity",
 ]
 
 

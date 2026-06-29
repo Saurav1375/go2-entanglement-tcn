@@ -9,7 +9,7 @@ Configs (channel set fed to the SAME TCN):
 
 For each: fit normalizer+calibrator on TRAIN, train the fixed split, score TEST
 (P/R/F1 @ VAL-1%FAR threshold, PR-AUC, ROC-AUC, leg-macro-F1, exact-match), then
-run 12-fold LORO (mean±std detection F1). Results appended to artifacts/ablation.json.
+run LORO (mean±std detection F1). Results appended to artifacts/ablation.json.
 
 Run:
     python -m dataset.ml.ablation            # all 5 configs (use a background run; ~20 min)

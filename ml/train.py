@@ -2,7 +2,7 @@
 
 Default: train on the fixed leakage-safe split, validate on VAL, and ship the
 artifact (model.pt + normalize.json + intensity_calib.json + split.json).
-With --loro: grouped Leave-One-Recording-Out CV over the 12 positive events
+With --loro: grouped Leave-One-Recording-Out CV over the positive events (config.POSITIVE_FILES)
 (reported as mean±std; the honest generalization estimate).
 
 Usage:
@@ -31,7 +31,10 @@ def _device() -> str:
     return "cuda" if (C.DEVICE == "cuda" and torch.cuda.is_available()) else "cpu"
 
 
-def set_seed(seed: int = C.SEED):
+def set_seed(seed: int = None):
+    # read C.SEED at call time (not bound at def time) so callers can override C.SEED
+    if seed is None:
+        seed = C.SEED
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -143,7 +146,7 @@ def run_fixed_split(epochs=C.EPOCHS):
 
 
 def run_loro(epochs=C.EPOCHS):
-    """Leave-One-Recording-Out CV over the 12 positive events."""
+    """Leave-One-Recording-Out CV over the positive events (config.POSITIVE_FILES)."""
     device = _device()
     recs_all = list(C.SPLIT["train"]) + list(C.SPLIT["val"]) + list(C.SPLIT["test"])
     print(f"[LORO] {len(C.POSITIVE_FILES)} positive events, device={device}")

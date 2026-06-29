@@ -23,6 +23,16 @@ entanglement_detector:
       RL: 0.5
     intensity_blend: 0.5               # 0.5*model_head + 0.5*physics
 
+    # ---- stationarity gate (Stop/Lock robustness) ----
+    # On entering a sustained stationary state (Stop/Lock) the ring buffer + debounce are
+    # reset so stale (just-ended) entanglement context cannot keep firing, and a short
+    # post-resume window suppresses gait re-acquisition transients. It does NOT blanket-
+    # suppress while stationary, so real entanglement applied at rest is still detected.
+    # Set stationary_dq_thresh: 0.0 to fully disable (then behaviour == pre-v2).
+    stationary_dq_thresh: 0.30         # rad/s; mean |joint dq| below this => stationary
+    stationary_min_ms: 100             # sustained stationary time before reset
+    stabilize_ms: 300                  # suppress alarms this long after motion resumes
+
     # ---- ROS / runtime ----
     lowstate_topic: "/lowstate"
     output_topic: "/entanglement_state"

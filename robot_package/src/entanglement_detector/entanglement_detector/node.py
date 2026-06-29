@@ -59,6 +59,9 @@ class EntanglementNode(Node):
         debounce_ms = float(p("debounce_ms", 75.0).value)
         intensity_blend = float(p("intensity_blend", 0.5).value)
         num_threads = int(p("num_threads", 1).value)
+        stationary_dq_thresh = float(p("stationary_dq_thresh", 0.0).value)
+        stationary_min_ms = float(p("stationary_min_ms", 100.0).value)
+        stabilize_ms = float(p("stabilize_ms", 0.0).value)
         self.publish_every_n = max(1, int(p("publish_every_n", 1).value))
         self.log_every_n = int(p("log_every_n", 250).value)
         lowstate_topic = p("lowstate_topic", "/lowstate").value
@@ -81,6 +84,9 @@ class EntanglementNode(Node):
             leg_thresholds=leg_thresholds,
             intensity_blend=intensity_blend,
             num_threads=num_threads,
+            stationary_dq_thresh=stationary_dq_thresh,
+            stationary_min_ms=stationary_min_ms,
+            stabilize_ms=stabilize_ms,
         )
 
         # ---- pub / sub ----

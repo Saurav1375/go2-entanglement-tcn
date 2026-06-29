@@ -61,8 +61,10 @@ def main():
     w(f"\nProtocol unchanged from REPORT.md: TARGET_FAR={TARGET_FAR:.0%}, leg_thr={LEG_THR}, "
       f"window=0.40 s. All changes here are **post-hoc / inference-time** (calibration, "
       f"thresholds, debounce, comparison) — they do **not** retrain or alter the TCN weights, "
-      f"so LORO detection ranking (F1=0.83±0.17) is unchanged. Feature ablations (§6) DO retrain "
-      f"and are reported with their own LORO.")
+      f"so LORO detection ranking is unchanged by these post-hoc steps (see RETRAIN_V2_REPORT.md "
+      f"for the current model's LORO). Feature ablations (§6) DO retrain and are reported with their "
+      f"own LORO. NOTE: §6's ablation table is the v1 feature-set study (architecture-level "
+      f"conclusions, not re-run for v2); §1 calibration IS refreshed for the current model.")
 
     # ---- score TCN on val/test once ----
     tcn_val = [evaluate.dense_infer(s, recs[s], model, normalizer, calibrator, device, hop=5)
