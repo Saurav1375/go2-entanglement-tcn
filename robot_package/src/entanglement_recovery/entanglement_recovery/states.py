@@ -65,6 +65,7 @@ class RecoveryContext:
     confidence: float = 0.0
     intensity: float = 0.0
     fallen: bool = False     # robot posture is fallen/abnormal (escalate)
+    soc: float = 100.0       # battery % (gate energy-intensive RecoveryStand)
 
 
 @dataclass(frozen=True)

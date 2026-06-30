@@ -95,7 +95,8 @@ class RecoveryFSM:
 
     def _context(self, now: float) -> RecoveryContext:
         return RecoveryContext(alarm_leg=self._det.alarm_leg, confidence=self._det.confidence,
-                               intensity=self._det.intensity, fallen=self._is_fallen(now))
+                               intensity=self._det.intensity, fallen=self._is_fallen(now),
+                               soc=self._rs.soc)
 
     def _begin_recovery_cycle(self, now: float) -> None:
         self._order = self.manager.order(self._context(now))
@@ -122,6 +123,14 @@ class RecoveryFSM:
     def on_command_result(self, command: Command, success: bool) -> None:
         if command == self._inflight:
             self._result = success
+
+    def heartbeat_inflight(self, now: float) -> None:
+        """Called by the node every tick WHILE it is still executing the in-flight command's
+        MotionPlan, so the per-command timeout measures time since the node STOPPED driving
+        (node death) — not normal multi-step/streamed plan duration. Prevents a spurious
+        timeout->retry->FAULT race between the FSM clock and the PlanRunner."""
+        if self._inflight is not None and self._result is None:
+            self._sent_at = now
 
     def request_estop(self) -> None:
         self._estop_req = True

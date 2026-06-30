@@ -33,7 +33,8 @@ class StrategyManager:
         cfg = self.cfg
         if ctx.fallen:
             seq = []  # type: List[str]
-            if cfg.escalate_to_recovery_stand:
+            # RecoveryStand is energy-intensive: gate it on battery (min_soc_pct).
+            if cfg.escalate_to_recovery_stand and ctx.soc >= cfg.min_soc_pct:
                 seq.append("recovery_stand")
             seq.append("emergency_stop")
             return seq

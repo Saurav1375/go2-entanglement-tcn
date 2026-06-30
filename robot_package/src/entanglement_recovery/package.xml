@@ -13,6 +13,8 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>entanglement_interfaces</exec_depend>
+  <!-- detector_and_recovery.launch.py launches + resolves the detector package -->
+  <exec_depend>entanglement_detector</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

@@ -3,6 +3,10 @@
 Step-by-step deployment of the leg-entanglement detector on a Unitree GO2
 (Python 3.8, ROS 2, CPU-only).
 
+> **Deploying the full pipeline (detector + intelligent recovery)?** Use
+> **[`RUNBOOK.md`](RUNBOOK.md)** — it covers all three packages, the network/DDS setup, and the
+> staged dry-run→actuated test flow. This file covers the detector alone.
+
 ## 0. Assumptions
 - The GO2 runs ROS 2 (e.g. Foxy on Ubuntu 20.04, Python 3.8) and publishes
   `unitree_go/msg/LowState` on `/lowstate`.
@@ -10,11 +14,13 @@ Step-by-step deployment of the leg-entanglement detector on a Unitree GO2
   install Python wheels.
 
 ## 1. Copy the package to the robot
-Copy the two ROS 2 packages into a colcon workspace `src/`:
+Copy the ROS 2 packages into a colcon workspace `src/` (include `entanglement_recovery` if you
+also want the recovery node — see RUNBOOK.md):
 ```bash
 # on your dev machine
 scp -r robot_package/src/entanglement_interfaces   unitree@<go2-ip>:~/ros2_ws/src/
 scp -r robot_package/src/entanglement_detector      unitree@<go2-ip>:~/ros2_ws/src/
+scp -r robot_package/src/entanglement_recovery      unitree@<go2-ip>:~/ros2_ws/src/   # recovery (optional)
 scp robot_package/requirements_robot.txt            unitree@<go2-ip>:~/ros2_ws/
 ```
 Only `robot_package/src/**` is needed on the robot. `export_model.py` and `tools/`
@@ -38,7 +44,7 @@ pip3 install -r requirements_robot.txt
 ```bash
 source /opt/ros/<distro>/setup.bash        # e.g. foxy
 cd ~/ros2_ws
-colcon build --packages-select entanglement_interfaces entanglement_detector
+colcon build --packages-select entanglement_interfaces entanglement_detector entanglement_recovery
 source install/setup.bash
 ```
 Build `entanglement_interfaces` first (the detector depends on its message); the single

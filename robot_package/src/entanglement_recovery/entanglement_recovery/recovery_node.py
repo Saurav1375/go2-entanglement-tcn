@@ -113,9 +113,15 @@ class RecoveryNode(Node):
 
     # ---- callbacks ----
     def _on_detection(self, msg):
+        # intensity drives the recovery aggressiveness policy: use the alarmed leg's intensity,
+        # else the max across legs (so it is never silently 0 / policy-dead).
+        per_leg = {"FR": msg.fr_intensity, "FL": msg.fl_intensity,
+                   "RR": msg.rr_intensity, "RL": msg.rl_intensity}
+        leg = str(msg.alarm_leg)
+        intensity = float(per_leg.get(leg, max(per_leg.values())))
         self.fsm.on_detection(Detection(
             entangled=bool(msg.entangled), confidence=float(msg.confidence),
-            alarm_leg=str(msg.alarm_leg), stamp=time.monotonic()))
+            alarm_leg=leg, intensity=intensity, stamp=time.monotonic()))
 
     def _tick(self):
         now = time.monotonic()
@@ -124,6 +130,7 @@ class RecoveryNode(Node):
 
         # 1) advance an in-flight motion plan; report completion to the FSM.
         if self.runner is not None:
+            self.fsm.heartbeat_inflight(now)   # keep the FSM command-timeout from racing the plan
             status = self.runner.tick(now)
             if status in ("done", "failed"):
                 self.fsm.on_command_result(self.runner.command, status == "done")

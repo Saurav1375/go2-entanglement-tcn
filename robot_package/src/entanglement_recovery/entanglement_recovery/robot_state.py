@@ -9,10 +9,16 @@ import math
 import time
 from typing import Optional
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from unitree_go.msg import SportModeState  # provided by the robot's ROS 2 env
 
 from .states import RobotState, Posture
 from . import sport_api as API
+
+# The Unitree Go2 publishes /sportmodestate and /lowstate as BEST_EFFORT; a default (RELIABLE)
+# subscription would receive nothing. Match the publisher QoS (same as the detector node).
+_GO2_QOS = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT,
+                      history=HistoryPolicy.KEEP_LAST)
 
 
 class RobotStateMonitor:
@@ -25,12 +31,12 @@ class RobotStateMonitor:
         self._pitch = 0.0
         self._soc = 100.0
         self._last_stamp = 0.0   # monotonic seconds of last SportModeState
-        self.sub = node.create_subscription(SportModeState, sportmode_topic, self._on_state, 10)
+        self.sub = node.create_subscription(SportModeState, sportmode_topic, self._on_state, _GO2_QOS)
         self._low_sub = None
         if lowstate_topic:
             try:
                 from unitree_go.msg import LowState
-                self._low_sub = node.create_subscription(LowState, lowstate_topic, self._on_low, 10)
+                self._low_sub = node.create_subscription(LowState, lowstate_topic, self._on_low, _GO2_QOS)
             except Exception as exc:
                 if self.log:
                     self.log.warn("LowState unavailable ({}); SOC gating disabled".format(exc))
