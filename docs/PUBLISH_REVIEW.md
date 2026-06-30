@@ -1,5 +1,10 @@
 # Pre-Publication Repository Review
 
+> **⚠️ Historical (pre-recovery, pre-v2).** This records the one-time GitHub publish-readiness pass
+> of the **ML-only** repo, before the v2 retrain and the deployment/recovery packages were added.
+> It is kept for provenance; the current front door and doc index are in the root
+> [`README.md`](../README.md).
+
 Status after the publish-readiness pass. No ML model or results were changed — only
 repository quality, structure, and documentation.
 

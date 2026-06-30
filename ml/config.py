@@ -20,8 +20,6 @@ LEG_ORDER = ("FR", "FL", "RR", "RL")
 JOINT_ORDER = ("hip", "thigh", "calf")
 CSV_FOOT_ORDER = ("FL", "FR", "RL", "RR")            # order of foot_* columns in the CSV
 MOTOR_INDEX = {"FR": (0, 1, 2), "FL": (3, 4, 5), "RR": (6, 7, 8), "RL": (9, 10, 11)}
-OPPOSITE_LEG_PAIR = {"FR": ("RR", "RL"), "FL": ("RR", "RL"),
-                     "RR": ("FR", "FL"), "RL": ("FR", "FL")}
 EFFORT_DQ_EPSILON = 0.05                              # reuse-source value
 
 # IMU columns kept (yaw dropped: unbounded integrator)

@@ -150,4 +150,3 @@ ALL_STRATEGIES = [
     SmallSideStepStrategy(), RotateStrategy(), RecoveryStandStrategy(), EmergencyStopStrategy(),
 ]
 BY_NAME = {s.name: s for s in ALL_STRATEGIES}
-BY_COMMAND = {s.command: s for s in ALL_STRATEGIES}

@@ -1,5 +1,12 @@
 # Leg-Entanglement TCN — Evaluation Verification Report
 
+> **⚠️ v1 — superseded for current metrics.** This is the original **v1** baseline verification
+> (20 recordings, 13/3/4 split, 12 positives). The **shipped model is v2**
+> (25 recordings, 16/4/5 split, 15 positives, +Lock state); for current detection/LORO/per-leg
+> numbers and the four GO2 field fixes see **[`RETRAIN_V2_REPORT.md`](RETRAIN_V2_REPORT.md)** and
+> **[`VALIDATION_REPORT_V2.md`](VALIDATION_REPORT_V2.md)**. The architecture-level conclusions here
+> (causality, channel roles, evaluation protocol) still hold.
+>
 > **Status:** this is the BASELINE verification (pre-improvement); numbers below are intentionally
 > left unchanged so the improvements stay directly comparable. The reliability follow-ups live in
 > **`IMPROVEMENTS.md`**. Items resolved there:

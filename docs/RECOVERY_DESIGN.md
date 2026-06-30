@@ -1,9 +1,19 @@
 # Recovery Framework — Design Document
 
+> **Note — the `RECOVERING` state was redesigned by the intelligent-recovery layer (now on `main`).**
+> §4 below describes the *base* framework's fixed `StopMove → BalanceStand` sequence and its
+> deliberate "does **not** command `Move`" policy. That `RECOVERING` behavior is now **superseded**
+> by a pluggable, detector-aware **strategy ladder** (`balance_stand → weight_shift → optional
+> Move-based small_reverse/sidestep/rotate → emergency_stop`) — i.e. the framework now *does*
+> command `Move` for selected strategies, gated by confidence/intensity and still dry-run by
+> default. Everything else here (STOPPING, escalation-to-RecoveryStand, safety rules, watchdog,
+> Sport-API facts) is current. See **[`INTELLIGENT_RECOVERY.md`](INTELLIGENT_RECOVERY.md)** for the
+> current `RECOVERING` design and the verified-vs-assumed list.
+
 Recovery framework for the Unitree Go2 that reacts to the leg-entanglement detector and
 brings the robot to a safe, stable state using **official Unitree high-level Sport APIs**.
 
-- **Branch:** `feature/recovery-framework`
+- **Branch:** `feature/recovery-framework` (consolidated into **`main`**)
 - **Principle:** robustness, safety, maintainability; **the detector is untouched** and keeps
   working exactly as before. Recovery only *subscribes* to detector events.
 - **Default posture:** **observe-and-intent-only** (`enable_actuation: false`) — the framework
@@ -116,7 +126,14 @@ A textual + Graphviz diagram is in `docs/diagrams/recovery_state_machine.dot` an
 
 ## 4. Recovery strategy (API selection rationale)
 
-For an **entanglement the robot is still upright** (not a fall), the chosen sequence is
+> **Superseded for `RECOVERING`:** this section's "Sequence A only / no `Move`" describes the base
+> framework. The current package runs a detector-aware **strategy ladder** in `RECOVERING`
+> (`balance_stand` first — i.e. Sequence A is still the gentlest rung — then `weight_shift`, then
+> optional Move-based `small_reverse`/`small_sidestep`/`rotate` gated by confidence & intensity,
+> then `emergency_stop`). The rationale below for *why BalanceStand is the safe first action* and
+> *why RecoveryStand is escalation-only* still holds. See `INTELLIGENT_RECOVERY.md`.
+
+For an **entanglement the robot is still upright** (not a fall), the gentlest first action is
 **Sequence A**: `StopMove (1003)` → settle → `BalanceStand (1002)`.
 
 | Option | Sequence | Decision |
@@ -230,15 +247,20 @@ robot_package/src/entanglement_recovery/
   launch/detector_and_recovery.launch.py
   entanglement_recovery/
     __init__.py
-    states.py          # State / Command / RobotState enums + Detection dataclass (pure)
-    recovery_fsm.py    # pure-Python FSM (no ROS) — the safety-critical logic
-    sport_api.py       # verified Sport API ID constants + topic names (pure)
-    sport_client.py    # ROS: command -> Request publish + response-code tracking + dry-run gate
-    robot_state.py     # ROS: /sportmodestate -> RobotState
-    recovery_node.py   # ROS orchestrator
-  test/test_recovery_fsm.py    # pytest over the pure FSM (all §3/§9 scenarios)
-docs/RECOVERY_DESIGN.md  docs/RECOVERY_TESTING.md  docs/RECOVERY_CONFIG.md
+    states.py            # State/Command/Posture enums + Detection/RobotState/RecoveryContext/MotionStep/MotionPlan (pure)
+    recovery_fsm.py      # pure-Python FSM (no ROS) — the safety-critical logic; RECOVERING -> StrategyManager
+    strategies.py        # 7 pure strategies + MotionPlan builders (intelligent layer)
+    strategy_manager.py  # detector-aware strategy ordering policy (intelligent layer)
+    plan_runner.py       # executes ONESHOT/STREAM/HOLD MotionSteps over ticks (intelligent layer)
+    sport_api.py         # verified Sport API ID constants + topic names + mode map (pure)
+    sport_client.py      # ROS: command -> Request publish + response-code tracking + dry-run gate
+    robot_state.py       # ROS: /sportmodestate(+/lowstate, BEST_EFFORT) -> RobotState/Posture
+    recovery_node.py     # ROS orchestrator
+  test/test_recovery_fsm.py    # 16 tests — pure FSM (all §3/§9 scenarios + strategy ladder)
+  test/test_plan_runner.py     # 3 tests — PlanRunner step execution
+docs/RECOVERY_DESIGN.md  docs/RECOVERY_TESTING.md  docs/RECOVERY_CONFIG.md  docs/INTELLIGENT_RECOVERY.md
 docs/diagrams/recovery_state_machine.dot  docs/diagrams/recovery_flow.md
+docs/diagrams/intelligent_recovery_architecture.md  docs/diagrams/recovery_strategy_flow.md  docs/diagrams/strategy_selection_flowchart.md
 ```
 
 ## 13. Future extensions

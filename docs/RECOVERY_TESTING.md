@@ -8,12 +8,16 @@ robot** (`enable_actuation:=false`, no motion), (3) **actuated bring-up** (only 
 
 ```bash
 PYTHONPATH=robot_package/src/entanglement_recovery \
-  python3 robot_package/src/entanglement_recovery/test/test_recovery_fsm.py   # 10/10 PASS
+  python3 robot_package/src/entanglement_recovery/test/test_recovery_fsm.py   # 16/16 PASS
+PYTHONPATH=robot_package/src/entanglement_recovery \
+  python3 robot_package/src/entanglement_recovery/test/test_plan_runner.py    # 3/3 PASS
 # or: colcon test --packages-select entanglement_recovery
 ```
 
-These drive the pure `RecoveryFSM` with synthetic detection + telemetry + command results and
-assert the transitions below. They cover every scenario in the table.
+`test_recovery_fsm.py` drives the pure `RecoveryFSM` with synthetic detection + telemetry +
+command results and asserts the transitions below (incl. the intelligent strategy ladder /
+escalation in `RECOVERING`); `test_plan_runner.py` covers the `PlanRunner` that executes
+ONESHOT/STREAM/HOLD `MotionStep`s over ticks. They cover every scenario in the table.
 
 ## Tier 2 — Dry-run on the robot (no motion)
 
@@ -59,7 +63,7 @@ happy-path(3), not-reentered(4), already-stopped(6), fallen(7), api-failure(9), 
 estop(13), reset(14). Scenarios 5/8/10/11 are exercised in dry-run/hardware.
 
 ## Acceptance criteria
-- Tier 1: 10/10 FSM tests pass.
+- Tier 1: 16/16 FSM tests + 3/3 PlanRunner tests pass.
 - Tier 2: dry-run shows the correct command **sequence + IDs** for scenarios 1–14; no command spam.
 - Tier 3: on an induced snag the robot stops then balance-stands without violent motion; e-stop
   (Damp) works instantly; no false recovery during normal walking/stops.

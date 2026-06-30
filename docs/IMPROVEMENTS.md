@@ -1,5 +1,12 @@
 # Reliability Improvements Report
 
+> **⚠️ v1 study.** This reliability analysis was run on the **v1** model (20 recordings). The
+> **calibration** numbers were **refreshed for v2** (Brier 0.110 → 0.091; see
+> [`RETRAIN_V2_REPORT.md`](RETRAIN_V2_REPORT.md) §3), but the **§6 feature ablation** table and
+> `ablation.json` are the **v1** feature-set study — its architecture-level conclusions (raw
+> kinematics essential, engineered channels help, IMU near-redundant) are unaffected by the data
+> addition and were not re-run. For the current shipped model use the v2 reports.
+
 Protocol unchanged from REPORT.md: TARGET_FAR=1%, leg_thr=0.5, window=0.40 s. All changes here are **post-hoc / inference-time** (calibration, thresholds, debounce, comparison) — they do **not** retrain or alter the TCN weights, so LORO detection ranking (F1=0.83±0.17) is unchanged. Feature ablations (§6) DO retrain and are reported with their own LORO.
 
 ## 1. Probability calibration (temperature scaling)

@@ -1,6 +1,12 @@
 # Recovery Framework — Deliverables, Migration & Summary
 
-Branch: **`feature/recovery-framework`** (main untouched).
+> **Status:** this documents the **base recovery framework** (StopMove→BalanceStand→escalate). The
+> **intelligent-recovery layer** (now consolidated into the production package) added a pluggable
+> **StrategyManager** + 7 strategies (`strategies.py`, `strategy_manager.py`) and a `PlanRunner`
+> (`plan_runner.py`), and implemented several items listed under *Recommendations* below
+> (Strategy pattern, leg/intensity-aware selection, SOC gating). See
+> [`INTELLIGENT_RECOVERY.md`](INTELLIGENT_RECOVERY.md) for the current `RECOVERING`-state design.
+> Test count is now **16 FSM + 3 PlanRunner** (not 10). All work is on **`main`**.
 
 ## New files
 
@@ -9,13 +15,17 @@ Branch: **`feature/recovery-framework`** (main untouched).
 |---|---|
 | `entanglement_recovery/sport_api.py` | Source-verified Sport API id constants + topic names + `SportModeState.mode` map (pure). |
 | `entanglement_recovery/states.py` | `State`/`Command`/`Posture` enums + `Detection`/`RobotState`/`Diagnostics` dataclasses (pure). |
-| `entanglement_recovery/recovery_fsm.py` | **The safety-critical FSM** — pure Python, deterministic, unit-tested. |
+| `entanglement_recovery/recovery_fsm.py` | **The safety-critical FSM** — pure Python, deterministic, unit-tested. `RECOVERING` delegates to the StrategyManager. |
+| `entanglement_recovery/strategies.py` | **(intelligent layer)** 7 pure strategies + `MotionPlan`/`MotionStep`, each mapped to verified Sport-API actions. |
+| `entanglement_recovery/strategy_manager.py` | **(intelligent layer)** detector-aware ordering policy (leg/confidence/intensity/posture/SOC) for the `RECOVERING` ladder. |
+| `entanglement_recovery/plan_runner.py` | **(intelligent layer)** executes ONESHOT/STREAM/HOLD `MotionStep`s over ticks. |
 | `entanglement_recovery/sport_client.py` | ROS adapter: Command→Request publish on `/api/sport/request`, response-code tracking, **dry-run gate**. |
-| `entanglement_recovery/robot_state.py` | ROS adapter: `/sportmodestate`(+`/lowstate`)→`RobotState`/`Posture`. |
+| `entanglement_recovery/robot_state.py` | ROS adapter: `/sportmodestate`(+`/lowstate`)→`RobotState`/`Posture` (BEST_EFFORT QoS). |
 | `entanglement_recovery/recovery_node.py` | Orchestrator node: wires events+telemetry+FSM+client, publishes `/recovery_status`. |
 | `config/recovery.yaml` | All parameters (no magic numbers). |
 | `launch/recovery.launch.py`, `launch/detector_and_recovery.launch.py` | Launch recovery alone / detector+recovery. |
-| `test/test_recovery_fsm.py` | 10 FSM unit tests (no ROS/hardware) covering the scenario matrix. |
+| `test/test_recovery_fsm.py` | 16 FSM unit tests (no ROS/hardware) covering the scenario matrix + strategy ladder. |
+| `test/test_plan_runner.py` | 3 PlanRunner unit tests (step execution over ticks). |
 | `package.xml`, `setup.py`, `setup.cfg`, `resource/entanglement_recovery` | ament_python packaging. |
 
 **Docs (`docs/`):** `RECOVERY_DESIGN.md`, `RECOVERY_TESTING.md`, `RECOVERY_CONFIG.md`,
@@ -29,8 +39,8 @@ detector's existing `/entanglement_state`. Verified: `git status` shows no chang
 ## Why each change was necessary
 - **Separate package, not edits to the detector** → satisfies "no regression / detector stays
   independent". Recovery depends on `entanglement_interfaces` only as a consumer.
-- **Pure FSM split from ROS adapters** → the safety logic is testable without a robot (10/10 tests)
-  and the hardware coupling is isolated/replaceable.
+- **Pure FSM split from ROS adapters** → the safety logic is testable without a robot (16/16 FSM +
+  3/3 PlanRunner tests) and the hardware coupling is isolated/replaceable.
 - **Verified Sport API ids + ROS contract** → commands use the official `/api/sport/request`
   interface with correct ids (StopMove 1003, BalanceStand 1002, RecoveryStand 1006, Damp 1001) and
   read return codes from `/api/sport/response`.
