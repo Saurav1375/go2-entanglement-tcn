@@ -20,12 +20,22 @@ class State(Enum):
 
 
 class Command(Enum):
-    """Abstract command emitted by the FSM; SportClient maps it to a Sport api_id."""
+    """Abstract command emitted by the FSM = the active recovery STRATEGY's handle.
+
+    The node maps each to a verified MotionPlan (see strategies.py / sport_api.py).
+    NONE/STOP_MOVE/BALANCE_STAND/RECOVERY_STAND/DAMP are unchanged for backward
+    compatibility; WEIGHT_SHIFT/SMALL_REVERSE/SMALL_SIDESTEP/ROTATE are the new
+    strategy handles (all implemented with verified Sport APIs: Euler 1007 / Move 1008).
+    """
     NONE = "NONE"
     STOP_MOVE = "STOP_MOVE"
     BALANCE_STAND = "BALANCE_STAND"
     RECOVERY_STAND = "RECOVERY_STAND"
     DAMP = "DAMP"
+    WEIGHT_SHIFT = "WEIGHT_SHIFT"
+    SMALL_REVERSE = "SMALL_REVERSE"
+    SMALL_SIDESTEP = "SMALL_SIDESTEP"
+    ROTATE = "ROTATE"
 
 
 class Posture(Enum):
@@ -44,7 +54,38 @@ class Detection:
     entangled: bool
     confidence: float = 0.0
     alarm_leg: str = ""
-    stamp: float = 0.0  # monotonic seconds when received
+    intensity: float = 0.0   # severity of the alarmed leg (0..1); drives recovery aggressiveness
+    stamp: float = 0.0       # monotonic seconds when received
+
+
+@dataclass(frozen=True)
+class RecoveryContext:
+    """Snapshot of the detector output that the strategy policy reasons about."""
+    alarm_leg: str = ""      # "FR"/"FL"/"RR"/"RL" or ""
+    confidence: float = 0.0
+    intensity: float = 0.0
+    fallen: bool = False     # robot posture is fallen/abnormal (escalate)
+
+
+@dataclass(frozen=True)
+class MotionStep:
+    """One verified Sport-API action within a strategy's MotionPlan.
+
+    api: one of sport_api.SPORT_API_ID keys (e.g. MOVE, EULER, STOP_MOVE, BALANCE_STAND...).
+    kind: ONESHOT (publish once, await response) | STREAM (re-publish each tick for duration,
+          required for MOVE) | HOLD (no publish; just wait duration, e.g. let a pose settle).
+    """
+    api: str
+    params: dict = field(default_factory=dict)
+    kind: str = "ONESHOT"
+    duration_s: float = 0.0
+
+
+@dataclass(frozen=True)
+class MotionPlan:
+    """Ordered, verified actions implementing one recovery strategy."""
+    name: str
+    steps: tuple = ()        # tuple[MotionStep, ...]
 
 
 @dataclass(frozen=True)

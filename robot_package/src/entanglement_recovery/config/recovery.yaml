@@ -35,6 +35,30 @@ entanglement_recovery:
     tip_pitch_deg: 50.0
     min_soc_pct: 10.0               # gate RecoveryStand on battery %
 
+    # ---- recovery strategy policy (intelligent recovery) ----
+    # The RECOVERING state runs strategies in order, re-checking the detector after each
+    # (closed loop). Order is detector-aware: gentle first, escalate last. Every magnitude is
+    # a TUNABLE DESIGN ASSUMPTION (below the verified 0.3 m/s demo) — validate on hardware.
+    active_confidence_min: 0.6      # min detector confidence to attempt Move-based strategies
+    high_intensity_thresh: 0.8      # intensity >= this => conservative: skip active Move, escalate
+    intensity_min_scale: 0.5        # motion-magnitude floor at intensity=1 (gentler when more stuck)
+    enable_balance_stand: true
+    enable_weight_shift: true       # Euler body-tilt (CoG-shift APPROXIMATION; not per-leg unload)
+    enable_small_reverse: true      # Move vx<0 (front snag) / vx>0 (rear snag)
+    enable_small_sidestep: true     # Move vy away from snagged side
+    enable_rotate: true             # Move vyaw (direction is a guess — wrap chirality unknown)
+    # motion magnitudes (Move = body-frame velocity, verified api_id 1008)
+    reverse_speed: 0.15             # m/s
+    reverse_duration_s: 0.6
+    sidestep_speed: 0.15            # m/s
+    sidestep_duration_s: 0.6
+    rotate_speed: 0.4               # rad/s
+    rotate_duration_s: 0.5
+    # weight-shift body tilt (Euler verified api_id 1007; ranges roll/pitch +/-0.75, yaw +/-1.5 rad)
+    weightshift_roll: 0.2           # rad  (sign convention UNVERIFIED — confirm on hardware)
+    weightshift_pitch: 0.2          # rad
+    weightshift_hold_s: 1.0
+
     # ---- topics ----
     entanglement_topic: "/entanglement_state"
     status_topic: "/recovery_status"

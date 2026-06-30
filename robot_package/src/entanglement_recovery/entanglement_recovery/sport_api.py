@@ -15,10 +15,21 @@ SPORT_API_ID = {
     "STAND_UP": 1004,       # prone -> stand
     "STAND_DOWN": 1005,     # stand -> prone
     "RECOVERY_STAND": 1006,  # right the body from a FALLEN state (face up/down)
-    "MOVE": 1008,           # velocity command (must be streamed)
+    "EULER": 1007,          # set body orientation {x:roll,y:pitch,z:yaw} (rad) while standing
+    "MOVE": 1008,           # body-frame velocity {x:vx,y:vy,z:vyaw} (must be streamed)
     "SIT": 1009,
     "RISE_SIT": 1010,
+    "POSE": 1028,           # enter/exit posture mode {"data": true/false}
 }
+
+# Euler body-orientation limits (rad), verified from go2_robot README.
+EULER_ROLL_MAX = 0.75
+EULER_PITCH_MAX = 0.75
+EULER_YAW_MAX = 1.5
+# NOTE (unverified): the README does NOT document the +/- direction (sign) convention for
+# roll/pitch, nor confirm feet stay planted. Treat WeightShift direction as a design
+# assumption to validate on hardware. BodyHeight(1013)/FootRaiseHeight(1014) are REMOVED
+# from the V2 interface and must NOT be used.
 
 # --- ROS 2 topics (configurable in recovery.yaml; these are the documented defaults) ---
 TOPIC_SPORT_REQUEST = "/api/sport/request"     # unitree_api/msg/Request  (publish)

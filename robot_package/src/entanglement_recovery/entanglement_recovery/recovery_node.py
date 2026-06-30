@@ -22,12 +22,11 @@ from std_msgs.msg import String, Empty
 from entanglement_interfaces.msg import EntanglementState
 
 from .recovery_fsm import RecoveryFSM, RecoveryConfig
-from .states import Command, Detection
+from .states import Command, Detection, State, MotionPlan, MotionStep
 from .robot_state import RobotStateMonitor
 from .sport_client import SportClient
+from .plan_runner import PlanRunner
 from . import sport_api as API
-
-_AWAIT_CMDS = (Command.STOP_MOVE, Command.BALANCE_STAND, Command.RECOVERY_STAND)
 
 
 class RecoveryNode(Node):
@@ -55,6 +54,24 @@ class RecoveryNode(Node):
             tip_roll_deg=float(p("tip_roll_deg", 50.0).value),
             tip_pitch_deg=float(p("tip_pitch_deg", 50.0).value),
             min_soc_pct=float(p("min_soc_pct", 10.0).value),
+            # ---- strategy policy ----
+            active_confidence_min=float(p("active_confidence_min", 0.6).value),
+            high_intensity_thresh=float(p("high_intensity_thresh", 0.8).value),
+            intensity_min_scale=float(p("intensity_min_scale", 0.5).value),
+            enable_balance_stand=bool(p("enable_balance_stand", True).value),
+            enable_weight_shift=bool(p("enable_weight_shift", True).value),
+            enable_small_reverse=bool(p("enable_small_reverse", True).value),
+            enable_small_sidestep=bool(p("enable_small_sidestep", True).value),
+            enable_rotate=bool(p("enable_rotate", True).value),
+            reverse_speed=float(p("reverse_speed", 0.15).value),
+            reverse_duration_s=float(p("reverse_duration_s", 0.6).value),
+            sidestep_speed=float(p("sidestep_speed", 0.15).value),
+            sidestep_duration_s=float(p("sidestep_duration_s", 0.6).value),
+            rotate_speed=float(p("rotate_speed", 0.4).value),
+            rotate_duration_s=float(p("rotate_duration_s", 0.5).value),
+            weightshift_roll=float(p("weightshift_roll", 0.2).value),
+            weightshift_pitch=float(p("weightshift_pitch", 0.2).value),
+            weightshift_hold_s=float(p("weightshift_hold_s", 1.0).value),
         )
         self.cfg = cfg
         self.enable_actuation = bool(p("enable_actuation", False).value)
@@ -75,7 +92,7 @@ class RecoveryNode(Node):
         self.fsm = RecoveryFSM(cfg)
         self.robot = RobotStateMonitor(self, sportmode, lowstate, self.get_logger())
         self.sport = SportClient(self, sport_req, sport_resp, self.enable_actuation, self.get_logger())
-        self.sport.set_result_callback(self.fsm.on_command_result)
+        self.runner = None   # active MotionPlan executor (PlanRunner) or None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT,
                          history=HistoryPolicy.KEEP_LAST)
@@ -104,13 +121,26 @@ class RecoveryNode(Node):
         now = time.monotonic()
         self.fsm.on_robot_state(self.robot.get(
             now, self.cfg.robot_state_timeout_s, self.cfg.tip_roll_deg, self.cfg.tip_pitch_deg))
+
+        # 1) advance an in-flight motion plan; report completion to the FSM.
+        if self.runner is not None:
+            status = self.runner.tick(now)
+            if status in ("done", "failed"):
+                self.fsm.on_command_result(self.runner.command, status == "done")
+                self.runner = None
+
+        # 2) tick the FSM. While a plan runs the FSM is awaiting and returns NONE.
         cmd = self.fsm.update(now)
-        if cmd != Command.NONE:
-            self.sport.send(cmd)
-            # In DRY-RUN the robot never replies, so simulate success to let the FSM
-            # progress and reveal the full intended sequence (logged, not actuated).
-            if not self.enable_actuation and cmd in _AWAIT_CMDS:
-                self.fsm.on_command_result(cmd, True)
+        if cmd != Command.NONE and self.runner is None:
+            if self.fsm.state in (State.STOPPING, State.RECOVERING):
+                # awaiting command -> execute its MotionPlan and ack on completion
+                plan = self.fsm.current_motion_plan() if self.fsm.state == State.RECOVERING else None
+                if plan is None:
+                    plan = MotionPlan("stop", (MotionStep("STOP_MOVE"),))
+                self.runner = PlanRunner(plan, cmd, self.sport.send_api, self.sport.pop_error, now)
+            else:
+                # direct emit (Damp from ESTOP / FAULT / watchdog) — no ack expected
+                self.sport.send(cmd)
         self._publish_status()
 
     def _publish_status(self):

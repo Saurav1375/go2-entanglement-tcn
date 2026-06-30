@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from entanglement_recovery.recovery_fsm import RecoveryFSM, RecoveryConfig
 from entanglement_recovery.states import State, Command, Posture, Detection, RobotState
 
-CMDS = {Command.STOP_MOVE, Command.BALANCE_STAND, Command.RECOVERY_STAND, Command.DAMP}
+CMDS = {Command.STOP_MOVE, Command.BALANCE_STAND, Command.RECOVERY_STAND, Command.DAMP,
+        Command.WEIGHT_SHIFT, Command.SMALL_REVERSE, Command.SMALL_SIDESTEP, Command.ROTATE}
 
 
 def cfg(**kw):
@@ -177,6 +178,97 @@ def test_reset_recovers_from_fault():
     assert f.state == State.FAULT
     f.reset(now); f.update(now + 0.1)
     assert f.state == State.MONITORING
+
+
+# ---------------------------------------------------------------- strategy-system scenarios
+def _run(f, t, det, robot, ack=True, dt=0.1):
+    """Drive to time t, feeding det(now)/robot(now), acking every emitted command; record
+    the ordered list of distinct commands emitted."""
+    seen = []
+    now = f._since
+    while now < t - 1e-9:
+        now = round(now + dt, 6)
+        f.on_detection(det(now)); f.on_robot_state(robot(now))
+        c = f.update(now)
+        if c in CMDS:
+            if not seen or seen[-1] != c:
+                seen.append(c)
+            if ack:
+                f.on_command_result(c, True)
+    return seen
+
+
+def test_strategy_first_success():
+    # detector clears immediately after the first (gentlest) strategy -> resume, only BalanceStand
+    f = RecoveryFSM(cfg()); f.arm(0.0)
+    _run(f, 0.8, lambda n: detok(True, n), lambda n: rs(Posture.LOCOMOTION, n))
+    seen = _run(f, 12.0, lambda n: detok(False, n), lambda n: rs(Posture.UPRIGHT, n))
+    assert f.state == State.MONITORING
+    assert Command.SMALL_REVERSE not in seen and Command.WEIGHT_SHIFT not in seen
+
+
+def test_strategy_sequencing_then_escalate_to_fault():
+    # detector NEVER clears -> strategies tried in ORDER, ending emergency-stop(Damp) -> FAULT
+    f = RecoveryFSM(cfg(verify_timeout_s=0.4, recovery_settle_s=0.2)); f.arm(0.0)
+    seen = _run(f, 40.0, lambda n: detok(True, n), lambda n: rs(Posture.UPRIGHT, n))
+    # order: BalanceStand, WeightShift, SmallReverse, SmallSideStep, Rotate, (Damp)
+    order = [Command.BALANCE_STAND, Command.WEIGHT_SHIFT, Command.SMALL_REVERSE,
+             Command.SMALL_SIDESTEP, Command.ROTATE, Command.DAMP]
+    filtered = [c for c in seen if c in order]
+    assert filtered == order, filtered          # exact sequence, no re-ordering / repeats
+    assert f.state == State.FAULT
+
+
+def test_strategy_clears_after_second_strategy():
+    # entangled through BalanceStand+WeightShift; clears once WeightShift reached -> resume
+    f = RecoveryFSM(cfg(verify_timeout_s=0.4, recovery_settle_s=0.2, verification_duration_s=0.3,
+                        resume_delay_s=0.2, cooldown_s=0.5)); f.arm(0.0)
+    # phase 1: drive (entangled) only until the 2nd strategy (WeightShift) has been emitted
+    seen1 = []
+    now = 0.0
+    while now < 5.0 and Command.WEIGHT_SHIFT not in seen1:
+        now = round(now + 0.1, 6)
+        f.on_detection(detok(True, now)); f.on_robot_state(rs(Posture.UPRIGHT, now))
+        c = f.update(now)
+        if c in CMDS:
+            seen1.append(c); f.on_command_result(c, True)
+    assert Command.WEIGHT_SHIFT in seen1 and Command.SMALL_REVERSE not in seen1
+    # phase 2: now it clears -> resume WITHOUT needing the Move strategies
+    seen2 = _run(f, now + 8.0, lambda n: detok(False, n), lambda n: rs(Posture.UPRIGHT, n))
+    assert f.state == State.MONITORING
+    assert Command.SMALL_REVERSE not in (seen1 + seen2)
+
+
+def test_low_confidence_skips_active_motions():
+    # low confidence -> only gentle strategies (no Move), then escalate
+    f = RecoveryFSM(cfg(verify_timeout_s=0.4, recovery_settle_s=0.2, confidence_min=0.0,
+                        active_confidence_min=0.6)); f.arm(0.0)
+    seen = _run(f, 30.0, lambda n: detok(True, n, conf=0.4),
+                lambda n: rs(Posture.UPRIGHT, n))
+    assert Command.SMALL_REVERSE not in seen and Command.ROTATE not in seen
+    assert Command.BALANCE_STAND in seen and f.state == State.FAULT
+
+
+def test_high_intensity_conservative():
+    # high intensity -> conservative: gentle only, no active Move, escalate
+    f = RecoveryFSM(cfg(verify_timeout_s=0.4, recovery_settle_s=0.2, high_intensity_thresh=0.8))
+    f.arm(0.0)
+    det = lambda n: Detection(entangled=True, confidence=0.95, alarm_leg="RR", intensity=0.9, stamp=n)
+    seen = _run(f, 30.0, det, lambda n: rs(Posture.UPRIGHT, n))
+    assert Command.SMALL_REVERSE not in seen and Command.SMALL_SIDESTEP not in seen
+    assert f.state == State.FAULT
+
+
+def test_strategy_command_timeout_faults():
+    # a strategy command never acked (API/comm failure) -> retries -> FAULT
+    f = RecoveryFSM(cfg(retry_limit=1, recovery_settle_s=0.2)); f.arm(0.0)
+    _run(f, 0.8, lambda n: detok(True, n), lambda n: rs(Posture.LOCOMOTION, n))  # -> STOPPING
+    now = f._since
+    for _ in range(40):
+        now = round(now + 0.5, 6)   # advance past command_timeout, NEVER ack
+        f.on_detection(detok(True, now)); f.on_robot_state(rs(Posture.UPRIGHT, now))
+        f.update(now)
+    assert f.state == State.FAULT
 
 
 def _all_tests():
