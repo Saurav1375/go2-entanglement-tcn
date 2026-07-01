@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="440" viewBox="0 0 1040 440" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <style>
+    .h{font-size:23px;font-weight:700;fill:#1F2A37}
+    .cap{font-size:14px;fill:#5A6B82}
+    .barlab{font-size:15px;font-weight:700;fill:#33414F}
+    .pct{font-size:26px;font-weight:700;fill:#ffffff}
+    .chipt{font-size:26px;font-weight:700;fill:#1F2A37}
+    .chipd{font-size:13.5px;fill:#3C4A5E}
+  </style>
+  <rect width="1040" height="440" fill="#ffffff"/>
+  <text x="520" y="42" text-anchor="middle" class="h">Results at a glance</text>
+
+  <!-- LEFT: recall comparison -->
+  <text x="250" y="80" text-anchor="middle" class="cap">Share of real entanglements the system catches</text>
+  <!-- axis baseline -->
+  <line x1="120" y1="330" x2="430" y2="330" stroke="#B9C2CE" stroke-width="1.5"/>
+  <!-- our bar 82% -->
+  <rect x="150" y="120" width="110" height="210" rx="6" fill="#3C7A3C"/>
+  <text x="205" y="158" text-anchor="middle" class="pct">82%</text>
+  <text x="205" y="356" text-anchor="middle" class="barlab">Our AI</text>
+  <text x="205" y="374" text-anchor="middle" class="barlab">system</text>
+  <!-- old bar 13% -->
+  <rect x="300" y="297" width="110" height="33" rx="6" fill="#9AA7BD"/>
+  <text x="355" y="288" text-anchor="middle" class="chipt" font-size="22" fill="#33414F">13%</text>
+  <text x="355" y="356" text-anchor="middle" class="barlab">Old rule-</text>
+  <text x="355" y="374" text-anchor="middle" class="barlab">based</text>
+
+  <!-- divider -->
+  <line x1="470" y1="70" x2="470" y2="400" stroke="#DDE3EA" stroke-width="1.5"/>
+
+  <!-- RIGHT: stat chips -->
+  <g>
+    <rect x="510" y="80" width="480" height="86" rx="12" fill="#E8EEF7" stroke="#3B5B92" stroke-width="1.6"/>
+    <text x="532" y="126" class="chipt">91%</text>
+    <text x="612" y="116" class="chipd">of the time it names the</text>
+    <text x="612" y="136" class="chipd"><tspan font-weight="700">exact leg</tspan> that is caught.</text>
+  </g>
+  <g>
+    <rect x="510" y="182" width="480" height="86" rx="12" fill="#E6F2E6" stroke="#3C7A3C" stroke-width="1.6"/>
+    <text x="532" y="228" class="chipt">~1 ms</text>
+    <text x="628" y="218" class="chipd">to decide — it runs on the</text>
+    <text x="628" y="238" class="chipd">robot's <tspan font-weight="700">own computer</tspan>, in real time.</text>
+  </g>
+  <g>
+    <rect x="510" y="284" width="480" height="86" rx="12" fill="#FBEEDD" stroke="#B5701A" stroke-width="1.6"/>
+    <text x="532" y="330" class="chipt">4 / 4</text>
+    <text x="612" y="320" class="chipd">real-world false-alarm problems</text>
+    <text x="612" y="340" class="chipd">found on the robot were <tspan font-weight="700">fixed</tspan>.</text>
+  </g>
+  <text x="120" y="418" class="cap">When it does raise an alarm, it is correct ~80% of the time (few false alarms).</text>
+</svg>

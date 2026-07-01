@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="470" viewBox="0 0 1260 470" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#5A6B82"/></marker>
+    <style>
+      .h{font-size:24px;font-weight:700;fill:#1F2A37}
+      .n{font-size:22px;font-weight:700;fill:#ffffff}
+      .t{font-size:17px;font-weight:700;fill:#1F2A37}
+      .d{font-size:13.5px;fill:#3C4A5E}
+      .loop{font-size:14px;font-style:italic;fill:#5A6B82}
+    </style>
+  </defs>
+  <rect width="1260" height="470" fill="#ffffff"/>
+  <text x="630" y="46" text-anchor="middle" class="h">How it works — in four simple steps</text>
+
+  <!-- cards -->
+  <!-- 1 SENSE -->
+  <g>
+    <rect x="40" y="90" width="258" height="238" rx="16" fill="#EEF1F5" stroke="#37474F" stroke-width="2"/>
+    <circle cx="78" cy="128" r="20" fill="#37474F"/><text x="78" y="135" text-anchor="middle" class="n">1</text>
+    <text x="112" y="135" class="t">Sense</text>
+    <text x="62" y="182" class="d">The robot streams about</text>
+    <text x="62" y="203" class="d"><tspan font-weight="700">500 sensor readings</tspan></text>
+    <text x="62" y="224" class="d"><tspan font-weight="700">every second</tspan> from its legs</text>
+    <text x="62" y="245" class="d">— how hard each joint</text>
+    <text x="62" y="266" class="d">pushes and how fast</text>
+    <text x="62" y="287" class="d">it moves.</text>
+  </g>
+  <!-- 2 SPOT -->
+  <g>
+    <rect x="340" y="90" width="258" height="238" rx="16" fill="#E6F2E6" stroke="#3C7A3C" stroke-width="2"/>
+    <circle cx="378" cy="128" r="20" fill="#3C7A3C"/><text x="378" y="135" text-anchor="middle" class="n">2</text>
+    <text x="412" y="135" class="t">Spot the snag</text>
+    <text x="362" y="182" class="d">A trained AI model reads</text>
+    <text x="362" y="203" class="d">the last <tspan font-weight="700">0.4 seconds</tspan> and</text>
+    <text x="362" y="224" class="d">recognises the tell-tale</text>
+    <text x="362" y="245" class="d">pattern of a leg being</text>
+    <text x="362" y="266" class="d">held back — a pattern</text>
+    <text x="362" y="287" class="d">too subtle for a rule.</text>
+  </g>
+  <!-- 3 PINPOINT -->
+  <g>
+    <rect x="640" y="90" width="258" height="238" rx="16" fill="#E8EEF7" stroke="#3B5B92" stroke-width="2"/>
+    <circle cx="678" cy="128" r="20" fill="#3B5B92"/><text x="678" y="135" text-anchor="middle" class="n">3</text>
+    <text x="712" y="135" class="t">Pinpoint</text>
+    <text x="662" y="182" class="d">It reports <tspan font-weight="700">which leg</tspan></text>
+    <text x="662" y="203" class="d">is caught (front/rear,</text>
+    <text x="662" y="224" class="d">left/right) and</text>
+    <text x="662" y="245" class="d"><tspan font-weight="700">how badly</tspan>, on a</text>
+    <text x="662" y="266" class="d">0–100% severity</text>
+    <text x="662" y="287" class="d">scale.</text>
+  </g>
+  <!-- 4 REACT -->
+  <g>
+    <rect x="940" y="90" width="258" height="238" rx="16" fill="#FBEEDD" stroke="#B5701A" stroke-width="2"/>
+    <circle cx="978" cy="128" r="20" fill="#B5701A"/><text x="978" y="135" text-anchor="middle" class="n">4</text>
+    <text x="1012" y="135" class="t">React safely</text>
+    <text x="962" y="182" class="d">A safety controller tries</text>
+    <text x="962" y="203" class="d">gentle, <tspan font-weight="700">pre-approved</tspan></text>
+    <text x="962" y="224" class="d"><tspan font-weight="700">moves</tspan> to free the leg</text>
+    <text x="962" y="245" class="d">— or stops safely and</text>
+    <text x="962" y="266" class="d">alerts the operator.</text>
+  </g>
+
+  <!-- arrows between cards -->
+  <path d="M300,209 L338,209" stroke="#5A6B82" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+  <path d="M600,209 L638,209" stroke="#5A6B82" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+  <path d="M900,209 L938,209" stroke="#5A6B82" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+
+  <!-- feedback loop -->
+  <path d="M1069,328 L1069,392 L191,392 L191,330" stroke="#5A6B82" stroke-width="2.2" fill="none" stroke-dasharray="6 5" marker-end="url(#a)"/>
+  <text x="630" y="428" text-anchor="middle" class="loop">…and it keeps watching, many times every second — the loop never stops.</text>
+</svg>

@@ -1,0 +1,24 @@
+/* ROS 2 node graph — matches recovery_node.py / node.py topic wiring */
+digraph ros {
+  rankdir=LR; bgcolor="white"; fontname="Helvetica"; fontsize=11;
+  nodesep=0.45; ranksep=0.9; splines=spline;
+  node [fontname="Helvetica", fontsize=10, penwidth=1.5];
+  edge [fontname="Helvetica", fontsize=8.5, color="#37474F", penwidth=1.2, arrowsize=0.75];
+
+  robot    [shape=component, style=filled, fillcolor="#ECEFF3", color="#37474F",
+            label="Unitree GO2\nSport service"];
+  detector [shape=box, style="rounded,filled", fillcolor="#E6F2E6", color="#3C7A3C",
+            label="entanglement_detector"];
+  recovery [shape=box, style="rounded,filled", fillcolor="#FBEEDD", color="#B5701A",
+            label="entanglement_recovery"];
+  operator [shape=box, style="rounded,filled", fillcolor="#ECEFF3", color="#37474F",
+            label="operator / logs"];
+
+  robot    -> detector [label="/lowstate"];
+  detector -> recovery [label="/entanglement_state"];
+  robot    -> recovery [label="/sportmodestate\l/lowstate"];
+  recovery -> robot    [label="/api/sport/request"];
+  robot    -> recovery [label="/api/sport/response", style=dashed, constraint=false];
+  recovery -> operator [label="/recovery_status"];
+  operator -> recovery [label="/recovery_estop\l/recovery_reset", style=dashed, constraint=false];
+}
