@@ -1,0 +1,166 @@
+Methodology:
+Formulated the problem as a Time series anomaly detection considering the all features
+
+Dataset Collection:
+-> data collected on unitree Go2 by streaming the /lowstate topic
+-> Collected recordings of different scenarios (Entanglement, Walking, Edge cases(Stops, Lock Mode, etc))
+-> Columns (51 columns) : 36 motor channels (q, dq, ddq for 3 joints per leg) + 4 Foot forces + IMU data(accn(xyz) + gyroscope(xyz) + rotation(yaw, roll , pitch))
+-> Sampling rate: 409-960Hz i.e /lowstate generates 409-960 Rows/sec;
+-> Labels: (Walking, Entangled, Stop, Lock, or blank), Labelled all the data manually (using manually recorded timestamps + plotting graphs)
+
+Summary:
+
+Feature Engineering:
+-> since logging rate is non uniform, every recording is resampled to a common  500Hz (2ms)
+-> Using linear interpolation for continuous sensor measurements (e.g., joint angles, IMU, torques).
+-> Using nearest-neighbor assignment for discrete variables such as status labels to preserve valid class values.
+-> Reason: Fixed length temporal filter means same thing on every recording + Machine learnng training consistency across all recordings (eg Rec A. 100 samples = 0.18s and Rec B. 100 samples = 0.27 -> inconsistency)
+-> Model Input: 60 channel window(i.e model receives 60 features at every time step)
+    -> 48 raw (36 motor + 4 FF + 8 IMU (yaw dropped))
+    -> 12 engineered physics features (derived from raw measurements)
+        -> instead of letting model discover everything itself, domain knowledge is incorporated by desigining physical meaningful quantities
+        -> makes it easier to detect entangled behaviour
+        -> Each leg, 3 features => 4x3 = 12 features
+        -> Feat-1: thigh_tau_down = max(0, -tau_thigh): only -ve thigh torque is retained
+            -> During Entanglement, thigh motor often pulls downwards against the obstruction
+            -> Positive torque usually corresponds to lifting the leg => less indicative of a snag
+
+        -> Feat-2: thigh_down_effort = thigh_tau_down/(|dq(thigh)| + e) , e = 0.05 (prevevnts div by 0)
+            -> high torque + very little movment => motor working hard but joint barely moving => exactly what happens when leg is caught
+
+        -> Feat-3: tau_sum = Sum(|tau_j|) all j, j = hip, thigh, calf joints of one leg
+            -> measures overall effort exerted by that leg, regardless of torque direction
+            -> entangled leg often shows unsually high combined effor
+            -> mainly for exact leg detection
+        -> These features are cheap, interpretable
+
+
+-> Z-score normalization:
+    -> Each feature has diff numerical scale, without normalization , large-valued features would dominate learning
+    -> each feature transformed, x' = (x - μ) / σ, μ=mean, σ=SD (computed from training data)
+    -> using only training data prevents data leakage => ensure statistics from validation or test sets do not influence model training
+
+-> Windowing: 200 samples
+    -> instead of feeding one sample, consecutive sample are grouped into sliding window
+    -> 200 samples x 60 features
+    -> why 200?, data resampled to 500Hz i.e 200 samples x 2ms = 400ms = 0.4s = roughly one trot stride (gait cycle)
+    -> Imp because single instant cant distinguish and one gait cycle(swing + stance) contains all info which are useful for abnormal behaviour
+
+-> Hop Size = 25 samples = 25 x 2 = 50ms => heavily overlap
+    ->why? if 200 then most data will be discarded
+    -> using smaller hop=> generated more training eg, improves training
+    -> During Evaluation: 1 Hop Size => continuous prediction (dense evaluation)
+
+
+-> Label Assignment:
+    -> at least 50% entangled => entire window labelled entangled => Positive Window
+    -> Stop/Lock => Negative window
+    -> Ambiguous Window (0.2, 0.5) => removed from training, kept during evaluation  => produces cleaner evaluation
+
+
+-> Per Leg Targets: Every positive recording receives flag based on the recording name
+-> Leakage safe split: split enire recordings instead of splitting windows randomly in a window
+    -> Reason: Data from same recording is similar => model already seen the test data
+
+
+-> Attach the flow/architecture diagram
+Summary:
+
+Machine Learning Pipeline:
+
+-> Model:  TCN (Temporal Convulation Network) designed for real time causal prediction
+-> Architecture:
+        200 × 60 Input Window
+                │
+                ▼
+        Causal Convolution Stem
+                │
+                ▼
+        5 Residual TCN Blocks
+        (dilations 1,2,4,8,16)
+                │
+                ▼
+        Last Time Step Embedding (64-D)
+                │
+                ├────────► Detection Head
+                ├────────► Leg Head
+                └────────► Intensity Head
+-> Details:
+    -> Causal:
+        ->normal convolution can see, but at time t robot hasn't yet observered future
+            Past   Current   Future
+             ●        ●        ●
+
+        ->therefore every prediction must depend only on, and never on Future
+            Past   Current
+             ●        ●
+
+        -> How is it achieved?:
+            -> by left padding , without padding [t-1  t  t+1], after padding 0 0 x1 x2 x3 ...
+            -> hence at time t. predictions depends only on t, t-1, t-2 ...
+
+    -> Convolutional Stem:
+        -> i/p has 60 channels => projected into richer representation => 60 --> 64
+        -> using one casual convolution
+        -> i.e learning a better feature representation before deeper processing
+        -> TODO: ADD MORE DETAILS
+
+    -> Residual TCN blocks: There are 5 blocks
+        -> each block contains:
+            -causal convolution
+            -GELU
+            -causal convolution
+            -GELU
+            -dropout
+            -residual connection
+
+        -> conceptually:
+                Input
+                 │
+                Conv
+                 │
+                GELU
+                │
+                Conv
+                 │
+                Dropout
+                 │
+                 +──────────+
+                 │          │
+                 └──────────┘
+                     │
+                   Output
+        -> residual connection hepls train deeper netwroks, learn x + F(x) instead of F(x) => improves optimization
+
+        -> TODO: ADD MORE DETAILS
+
+    -> Dilations: makes TCN special
+        -> instead of using consecutive samples ● ● ●, the convolution skips samples
+        -> dilations: 1 2 4 8 16 means:
+             - Layer 1: ● ● ●
+             - Layer 2: ● ○ ● ○ ●
+             - Layer 3: ● ○ ○ ○ ● ○ ○ ○ ● and so on
+        -> each depper layer sees farther into past without greatly increasing no of parmaters
+        -> Why dilation? eg. seeing 250ms required dozen of layers, with dilation its easier
+
+    -> Kernel Size = 3: each convolution uses 3 nbr positions, because dilation increases, those 3 positions becomes farther apart in deeper layers
+
+    -> Receptive Field = 127 samples, since f=500Hz i.e 127 x 2 = 254 ms => prdeiction at current time depend approximately the previous quarter of a second. (enough as i/p window is 400ms, network only need 254 ms to recognize entanglement patterns)
+
+    -> Last timestep readout: TCN computes embedding where each embedding summarizes the history up to that pt.
+        eg i/p  t1   TCN computes: e1
+                t2                 e2
+                t3                 e3
+                ...                ...
+                t200               e200 -> model keeps this only
+
+    -> Three prediction heads: Final embedding = 64 dimensional --> 3 different layers produces diff outputs
+        -> Detection Head: Entangled?, o/p One Logit --> Later converted into a prob with sigmoid
+        -> Leg Head: FR,FL,RR,RL, Four Logits --> indicated which leg is entangled
+        -> Intensity Head: FR, FL, RR, RL intensity --> estimates the severity of entanglement for each leg
+
+
+
+
+
+
