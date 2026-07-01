@@ -74,7 +74,12 @@ verified Sport-API motion commands — every motion gated behind a dry-run flag 
        operator / logs
 ```
 
-A fuller component diagram lives in [`docs/diagrams/`](docs/diagrams/) (see
+Publication-quality figures (editable SVG/Graphviz/Mermaid + PNG/PDF) are in
+[`docs/diagrams/architecture/`](docs/diagrams/architecture/) — a
+[high-level overview](docs/diagrams/architecture/architecture_highlevel.svg) and a full
+[detailed schematic](docs/diagrams/architecture/architecture_detailed.svg) (every block, topic,
+FSM state, and Sport-API ID). Recovery-specific component/flow diagrams are in
+[`docs/diagrams/`](docs/diagrams/) (see
 [`intelligent_recovery_architecture.md`](docs/diagrams/intelligent_recovery_architecture.md) and
 [`recovery_flow.md`](docs/diagrams/recovery_flow.md)).
 
@@ -434,7 +439,8 @@ one front-both LORO fold weakened. Both are documented for the next data-collect
 | [docs/RECOVERY_CONFIG.md](docs/RECOVERY_CONFIG.md) | every recovery parameter |
 | [docs/RECOVERY_TESTING.md](docs/RECOVERY_TESTING.md) | scenario matrix → tests, test tiers |
 | [docs/RECOVERY_DELIVERABLES.md](docs/RECOVERY_DELIVERABLES.md) | recovery package file map + deliverables |
-| [docs/diagrams/](docs/diagrams/) | architecture / state-machine / strategy-flow diagrams |
+| [docs/diagrams/architecture/](docs/diagrams/architecture/) | **publication-quality** high-level + detailed architecture figures (SVG/DOT/Mermaid + PNG/PDF) |
+| [docs/diagrams/](docs/diagrams/) | recovery state-machine / strategy-flow diagrams |
 | [docs/REPORT.md](docs/REPORT.md) | *(v1, superseded by RETRAIN_V2_REPORT)* baseline detector verification |
 | [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) | *(v1; calibration refreshed for v2, ablation is v1)* reliability study |
 | [docs/PLAN.md](docs/PLAN.md) | original ML design plan |

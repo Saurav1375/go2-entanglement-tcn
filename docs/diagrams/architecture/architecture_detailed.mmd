@@ -1,0 +1,72 @@
+%% Leg-Entanglement Detection & Recovery — DETAILED Architecture (Mermaid editable source)
+%% Appendix/documentation level. Matches the implemented code (main).
+%% Primary editable source for the detailed figure is architecture_detailed.dot (Graphviz);
+%% this Mermaid version is provided as an alternate. Render:
+%%   mmdc -i architecture_detailed.mmd -o architecture_detailed.png -b white -w 2600
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Helvetica','fontSize':'12px'}}}%%
+flowchart TB
+  %% ---------------- OFFLINE ----------------
+  subgraph OFFLINE["OFFLINE · research &amp; training (PyTorch, dev machine)"]
+    direction TB
+    O1["<b>Dataset</b> · csv/ · 25 recordings<br/>15 positive / 10 negative (+Lock)"]
+    O2["<b>Data prep</b><br/>normalize_timestamps.py → csv_normalized/<br/>merge_labels.py (+label/) → csv_labelled/"]
+    O3["<b>Preprocess (ml/)</b><br/>resample 500 Hz · 48 raw + 12 engineered = 60 ch<br/>window 0.40 s (200) · z-score (train rows only)"]
+    O4["<b>Multi-task causal TCN</b> (model.py)<br/>CausalConv1d stem 60→64 (k3) + GELU<br/>5 × TCN block d=1,2,4,8,16 · RF=127<br/>last-timestep embedding[64] → bin(1)·legs(4)·intensity(4)"]
+    O5["<b>train.py</b> · fixed split 16/4/5 + LORO-CV<br/>loss = 1·BCE(bin)+1·BCE(legs)+0.3·Huber(int)"]
+    O6["<b>Artifacts</b> · model.pt · normalize.json<br/>intensity_calib.json · calibration.json (T)"]
+    O7["<b>export_model.py</b> → ONNX + TorchScript<br/>copies calib JSON · runtime ≡ research (≈1e-6)"]
+    O1 --> O2 --> O3 --> O4 --> O5 --> O6 --> O7
+  end
+
+  %% ---------------- DETECTOR ----------------
+  subgraph DETECTOR["DETECTOR NODE · entanglement_detector (ROS 2, CPU · numpy+ONNX)"]
+    direction TB
+    D1["<b>lowstate_adapter</b> · LowState → 48 raw signals<br/>(36 motor q/dq/tau · 4 foot · 8 IMU)"]
+    D2["<b>stationarity gate</b> (Stop/Lock)<br/>mean|joint dq| &lt; thr for N → clear buffer+debounce; arm stabilize"]
+    D3["<b>ring buffer</b> deque(maxlen=200)<br/>&lt; 200 samples → None (filling)"]
+    D4["<b>build_channel_matrix</b> · [200,48] → [60,200] (+12 engineered)"]
+    D5["<b>Normalizer.apply</b> (z-score) → [1,60,200]"]
+    D6["<b>model backend</b> (ONNX/TorchScript) · forward → bin/legs/intensity logits"]
+    D7["<b>post-process</b> · p_bin=σ(logit) · confidence=σ(logit/T)<br/>intensity = blend·head + (1−blend)·(p_leg·mag)"]
+    D8["<b>debounce + attribution</b><br/>alarm = p_bin≥0.9999 sustained ∧ not stabilizing · per-leg thr (RR=0.9) → alarm_leg"]
+    D1 --> D2 --> D3 --> D4 --> D5 --> D6 --> D7 --> D8
+  end
+
+  %% ---------------- RECOVERY ----------------
+  subgraph RECOVERY["RECOVERY NODE · entanglement_recovery (pure FSM + thin adapters)"]
+    direction TB
+    C1["<b>on_detection</b> → Detection<br/>{entangled, confidence, alarm_leg, intensity}"]
+    C2["<b>RobotStateMonitor</b> · /sportmodestate(+/lowstate)<br/>→ posture · roll · pitch · soc · fresh"]
+    C3["<b>RecoveryFSM.update(now)</b> — 10 states<br/>IDLE→MONITORING→CONFIRMING→STOPPING→RECOVERING<br/>→VERIFYING→RESUMING→COOLDOWN · ESTOP/FAULT→Damp"]
+    C4["<b>StrategyManager.order(ctx)</b> — detector-aware<br/>fallen → [recovery_stand (soc≥min), emergency_stop]<br/>upright → [balance_stand, weight_shift,<br/>(conf≥0.6 ∧ int&lt;0.8 → small_reverse, sidestep, rotate), emergency_stop]"]
+    C5["<b>strategies → MotionPlan</b> (PlanRunner)<br/>MotionStep = ONESHOT · STREAM (Move) · HOLD"]
+    C6["<b>verified Sport API ids</b><br/>StopMove 1003 · BalanceStand 1002 · Euler 1007<br/>Move 1008 · RecoveryStand 1006 · Damp 1001"]
+    C7["<b>SportClient.send_api</b> · Command → Request<br/><b>dry-run gate (enable_actuation)</b> · ack on /api/sport/response (code==0)"]
+    C1 --> C3
+    C2 --> C3
+    C3 -->|RECOVERING| C4 --> C5 --> C6 --> C7
+  end
+
+  ROBOT(["<b>Unitree GO2</b> · Sport service · sensors + actuators (physical robot)"])
+
+  %% ---------------- cross-cluster ----------------
+  O7 -. "deploy: ONNX + JSON" .-> D6
+  ROBOT -->|"/lowstate (unitree_go/LowState) BEST_EFFORT ~500 Hz"| D1
+  D8 -->|"/entanglement_state (EntanglementState) BEST_EFFORT"| C1
+  ROBOT -->|"/sportmodestate + /lowstate (telemetry)"| C2
+  C7 -->|"/api/sport/request (unitree_api/Request, api_id)"| ROBOT
+  ROBOT -.->|"/api/sport/response (code==0)"| C7
+  C3 -->|"/recovery_status (std_msgs/String, JSON)"| LOGS["Operator / logs"]
+
+  classDef data  fill:#E8EEF7,stroke:#3B5B92,color:#1F2A37;
+  classDef model fill:#E9E6F7,stroke:#5B4B9E,color:#1F2A37;
+  classDef exp   fill:#E1F0EE,stroke:#2E7D74,color:#1F2A37;
+  classDef det   fill:#E6F2E6,stroke:#3C7A3C,color:#1F2A37;
+  classDef rec   fill:#FBEEDD,stroke:#B5701A,color:#1F2A37;
+  classDef robot fill:#ECEFF3,stroke:#37474F,color:#1F2A37;
+  class O1,O2,O3 data;
+  class O4,O5,O6 model;
+  class O7 exp;
+  class D1,D2,D3,D4,D5,D6,D7,D8 det;
+  class C1,C2,C3,C4,C5,C6,C7 rec;
+  class ROBOT,LOGS robot;

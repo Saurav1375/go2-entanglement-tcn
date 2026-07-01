@@ -1,0 +1,117 @@
+/* ============================================================================
+   Leg-Entanglement Detection & Recovery — DETAILED architecture (appendix)
+   Editable Graphviz source. Exact match to the implemented code (main branch).
+   Render:  dot -Tsvg architecture_detailed.dot -o architecture_detailed.svg
+            dot -Tpng -Gdpi=200 architecture_detailed.dot -o architecture_detailed.png
+            dot -Tpdf architecture_detailed.dot -o architecture_detailed.pdf
+   ============================================================================ */
+digraph architecture {
+  rankdir=TB;
+  compound=true;
+  bgcolor="white";
+  fontname="Helvetica";
+  labelloc="t";
+  fontsize=20;
+  label=<<b>Leg-Entanglement Detection &amp; Recovery — Detailed System Architecture (Unitree GO2)</b>>;
+  nodesep=0.35;
+  ranksep=0.55;
+  splines=spline;
+
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        color="#37474F", fillcolor="#FFFFFF", penwidth=1.4, margin="0.14,0.08"];
+  edge [color="#37474F", fontname="Helvetica", fontsize=9.5, penwidth=1.3, arrowsize=0.8];
+
+  /* ---------- ROS 2 topic node style ---------- */
+  { node [shape=note, fillcolor="#FFF6D6", color="#A38A1E", fontsize=9.5, fontname="Helvetica-Bold"];
+    t_lowstate  [label="/lowstate\l(unitree_go/LowState)\lBEST_EFFORT · ~500 Hz"];
+    t_entstate  [label="/entanglement_state\l(entanglement_interfaces/\lEntanglementState) · BEST_EFFORT"];
+    t_sportmode [label="/sportmodestate + /lowstate\l(telemetry) · BEST_EFFORT"];
+    t_sportreq  [label="/api/sport/request\l(unitree_api/Request, api_id)"];
+    t_status    [label="/recovery_status\l(std_msgs/String, JSON)"];
+    t_ctrl      [label="/recovery_estop · /recovery_reset\l(std_msgs/Empty)"];
+  }
+
+  /* ============================ OFFLINE ============================ */
+  subgraph cluster_offline {
+    label=<<b>OFFLINE — research &amp; training (PyTorch, dev machine)</b>>;
+    labeljust="l"; fontsize=13; color="#C2D0E4"; style="rounded,dashed"; bgcolor="#F4F7FB"; margin=12;
+
+    node [fillcolor="#E8EEF7", color="#3B5B92"];
+    o_csv  [label=<<b>Dataset</b><br/>csv/ · 25 GO2 recordings<br/>15 positive / 10 negative (+Lock)>];
+    o_prep [label=<<b>Data prep</b><br/>normalize_timestamps.py → csv_normalized/<br/>merge_labels.py (+label/) → csv_labelled/>];
+    o_feat [label=<<b>Preprocess (ml/)</b><br/>resample 500 Hz · features 48 raw + 12 engineered = 60 ch<br/>sliding window 0.40 s (200) · z-score norm (train rows only)>];
+
+    node [fillcolor="#E9E6F7", color="#5B4B9E"];
+    o_tcn  [label=<<b>Multi-task causal TCN</b> (model.py)<br/>CausalConv1d stem 60→64 (k3) + GELU<br/>5 × residual TCN block: d = 1,2,4,8,16 · RF = 127<br/>last-timestep embedding [64] → 3 heads:<br/>bin(64→1) · legs(64→4) · intensity(64→4)>];
+    o_train[label=<<b>train.py</b><br/>fixed split 16/4/5 + LORO-CV<br/>loss = 1·BCE(bin) + 1·BCE(legs) + 0.3·Huber(int)>];
+    o_arti [label=<<b>Artifacts</b><br/>model.pt · normalize.json<br/>intensity_calib.json · calibration.json (T)>];
+
+    node [fillcolor="#E1F0EE", color="#2E7D74"];
+    o_exp  [label=<<b>export_model.py</b><br/>→ entanglement_tcn.onnx + _ts.pt<br/>copies calib JSON · runtime ≡ research (≈1e-6)>];
+
+    o_csv -> o_prep -> o_feat -> o_tcn -> o_train -> o_arti -> o_exp;
+  }
+
+  /* ============================ DETECTOR ============================ */
+  subgraph cluster_detector {
+    label=<<b>DETECTOR NODE — entanglement_detector (ROS 2, CPU · numpy + ONNX)</b>>;
+    labeljust="l"; fontsize=13; color="#C4DCC4"; style="rounded,dashed"; bgcolor="#F1F8F1"; margin=12;
+    node [fillcolor="#E6F2E6", color="#3C7A3C"];
+
+    d_adapt [label=<<b>lowstate_adapter</b><br/>LowState → 48 raw signals<br/>(36 motor q/dq/tau · 4 foot · 8 IMU)>];
+    d_gate  [label=<<b>stationarity gate</b> (Stop/Lock)<br/>mean|joint dq| &lt; thr for N samples<br/>→ clear ring buffer + debounce; arm stabilize window>];
+    d_ring  [label=<<b>ring buffer</b> deque(maxlen=200)<br/>&lt; 200 samples → return None (buffer filling)>];
+    d_build [label=<<b>build_channel_matrix</b><br/>[200,48] → [60,200] (+12 engineered per-leg)>];
+    d_norm  [label=<<b>Normalizer.apply</b> (z-score)<br/>→ [1,60,200]>];
+    d_back  [label=<<b>model backend</b> (ONNX Runtime / TorchScript)<br/>forward → bin_logit · legs_logit · intensity_logit>];
+    d_post  [label=<<b>post-process</b><br/>p_bin = σ(logit) · confidence = σ(logit/T)<br/>intensity = blend·head + (1−blend)·(p_leg·mag)>];
+    d_deb   [label=<<b>debounce + attribution</b><br/>alarm = (p_bin ≥ 0.9999 sustained ≥ debounce_k)<br/>∧ not stabilizing · per-leg thr (RR=0.9) → alarm_leg>];
+
+    d_adapt -> d_gate -> d_ring -> d_build -> d_norm -> d_back -> d_post -> d_deb;
+  }
+
+  /* ============================ RECOVERY ============================ */
+  subgraph cluster_recovery {
+    label=<<b>RECOVERY NODE — entanglement_recovery (ROS 2 · pure FSM + thin adapters)</b>>;
+    labeljust="l"; fontsize=13; color="#E3C89A"; style="rounded,dashed"; bgcolor="#FDF6EC"; margin=12;
+    node [fillcolor="#FBEEDD", color="#B5701A"];
+
+    r_det   [label=<<b>on_detection</b> → Detection<br/>{entangled, confidence, alarm_leg, intensity}>];
+    r_telem [label=<<b>RobotStateMonitor</b><br/>/sportmodestate(+/lowstate) → posture · roll · pitch · soc · fresh>];
+
+    r_fsm   [label=<<b>RecoveryFSM.update(now)</b> — 10 states<br/>IDLE → MONITORING → CONFIRMING (sustained ≥ t) →<br/>STOPPING (skip if already stopped) → RECOVERING →<br/>VERIFYING → RESUMING → COOLDOWN → MONITORING<br/>global: ESTOP (Damp) · FAULT (Damp) on retry/watchdog>];
+    r_mgr   [label=<<b>StrategyManager.order(ctx)</b> — detector-aware<br/>fallen → [recovery_stand (soc ≥ min), emergency_stop]<br/>upright → [balance_stand, weight_shift,<br/>&nbsp;&nbsp;(conf ≥ 0.6 ∧ intensity &lt; 0.8 → small_reverse, sidestep, rotate),<br/>&nbsp;&nbsp;emergency_stop]>];
+    r_plan  [label=<<b>strategies → MotionPlan</b> (PlanRunner)<br/>MotionStep kind = ONESHOT · STREAM (Move) · HOLD<br/>magnitudes scale down with intensity>];
+    r_api   [label=<<b>verified Sport API ids</b><br/>StopMove 1003 · BalanceStand 1002 · Euler 1007 (weight_shift)<br/>Move 1008 (reverse/sidestep/rotate) · RecoveryStand 1006 · Damp 1001>];
+    r_sport [label=<<b>SportClient.send_api</b><br/>Command → Request · <b>dry-run gate (enable_actuation)</b><br/>ack on /api/sport/response (status.code == 0)>];
+
+    r_det -> r_fsm;
+    r_telem -> r_fsm;
+    r_fsm -> r_mgr [label="RECOVERING"];
+    r_mgr -> r_plan -> r_api -> r_sport;
+  }
+
+  /* ============================ ROBOT ============================ */
+  node [shape=component, fillcolor="#ECEFF3", color="#37474F", fontsize=12, penwidth=1.8];
+  robot [label=<<b>Unitree GO2</b><br/>Sport service · sensors + actuators<br/>(physical robot)>];
+
+  /* ---------- cross-cluster dataflow (attributes attach to the intended edge only) ---------- */
+  o_exp -> d_back      [lhead=cluster_detector, style=dashed, label="deploy: ONNX + JSON", fontcolor="#2E7D74"];
+
+  robot      -> t_lowstate;
+  t_lowstate -> d_adapt [lhead=cluster_detector];
+
+  d_deb      -> t_entstate [ltail=cluster_detector];
+  t_entstate -> r_det      [lhead=cluster_recovery];
+
+  robot       -> t_sportmode;
+  t_sportmode -> r_telem   [lhead=cluster_recovery];
+
+  t_ctrl -> r_fsm          [lhead=cluster_recovery];
+
+  r_sport    -> t_sportreq [ltail=cluster_recovery];
+  t_sportreq -> robot;
+  robot      -> r_sport    [style=dashed, label="/api/sport/response\l(status.code == 0)", constraint=false];
+
+  r_fsm -> t_status        [ltail=cluster_recovery, constraint=false];
+}

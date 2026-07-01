@@ -1,0 +1,46 @@
+%% Leg-Entanglement Detection & Recovery — High-Level Architecture (Mermaid editable source)
+%% Matches the implemented code (main). Render at https://mermaid.live or with mermaid-cli:
+%%   mmdc -i architecture_highlevel.mmd -o architecture_highlevel.png -b white
+%%   mmdc -i architecture_highlevel.mmd -o architecture_highlevel.pdf
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Helvetica','fontSize':'14px'}}}%%
+flowchart TB
+  %% ---------------- OFFLINE ----------------
+  subgraph OFFLINE["OFFLINE · research &amp; training (PyTorch, dev machine)"]
+    direction LR
+    A["<b>Dataset</b><br/>25 GO2 recordings · /lowstate CSV<br/>15 positive / 10 negative · +Lock"]
+    B["<b>Preprocess</b><br/>resample 500 Hz · 60 ch (48 raw+12 eng)<br/>sliding window 0.40 s (200)"]
+    C["<b>Multi-task causal TCN</b><br/>shared encoder + 3 heads<br/>fixed split 16/4/5 + LORO-CV"]
+    D["<b>Artifacts</b><br/>model.pt<br/>normalize / intensity / calibration.json"]
+    A --> B --> C --> D
+  end
+
+  E["<b>Export → ONNX + calib JSON</b><br/>deployed runtime ≡ research (≈1e-6)"]
+  D --> E
+
+  %% ---------------- ONLINE ----------------
+  subgraph ONLINE["ONLINE · on-robot deployment (ROS 2, CPU-only)"]
+    direction LR
+    R(["<b>Unitree GO2</b><br/>Sport service · sensors + actuators"])
+    DET["<b>Detector node</b><br/>ring buffer (200) · TCN (ONNX)<br/>calibrate · debounce · stationarity gate"]
+    REC["<b>Recovery node</b><br/>FSM (10 states) · StrategyManager<br/>closed-loop ladder · dry-run gate"]
+    OP["<b>Operator</b> / logs"]
+    R -->|"/lowstate ~500 Hz"| DET
+    DET -->|"/entanglement_state"| REC
+    REC -->|"/recovery_status"| OP
+    REC -->|"/api/sport/request (dry-run gated) → motion → new proprioception"| R
+  end
+
+  E -. deploy .-> DET
+
+  classDef data   fill:#E8EEF7,stroke:#3B5B92,color:#1F2A37;
+  classDef model  fill:#E9E6F7,stroke:#5B4B9E,color:#1F2A37;
+  classDef export fill:#E1F0EE,stroke:#2E7D74,color:#1F2A37;
+  classDef det    fill:#E6F2E6,stroke:#3C7A3C,color:#1F2A37;
+  classDef rec    fill:#FBEEDD,stroke:#B5701A,color:#1F2A37;
+  classDef robot  fill:#ECEFF3,stroke:#37474F,color:#1F2A37;
+  class A,B data;
+  class C,D model;
+  class E export;
+  class DET det;
+  class REC rec;
+  class R,OP robot;

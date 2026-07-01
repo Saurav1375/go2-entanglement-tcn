@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <!-- ============================================================= -->
+  <!-- Leg-Entanglement Detection & Recovery — High-Level Architecture -->
+  <!-- Editable source. Exact match to implemented code (main branch). -->
+  <!-- ============================================================= -->
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7.5,3 L0,6 Z" fill="#37474F"/>
+    </marker>
+    <style>
+      .title  { font-size:22px; font-weight:700; fill:#1F2A37; }
+      .sub    { font-size:12.5px; fill:#5A6B82; }
+      .band   { font-size:12.5px; font-weight:700; letter-spacing:.4px; }
+      .btitle { font-size:14.5px; font-weight:700; fill:#1F2A37; }
+      .bdesc  { font-size:11px; fill:#40506A; }
+      .elabel { font-size:11px; fill:#2C3A4D; }
+      .tpill  { font-size:10.5px; font-weight:600; fill:#6B5A11; }
+      .leg    { font-size:11px; fill:#40506A; }
+      .edge   { stroke:#37474F; stroke-width:1.7; fill:none; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1240" height="700" fill="#FFFFFF"/>
+
+  <!-- header -->
+  <text x="620" y="38" text-anchor="middle" class="title">Leg-Entanglement Detection &amp; Recovery — System Architecture</text>
+  <text x="620" y="60" text-anchor="middle" class="sub">Unitree GO2 · proprioceptive multi-task causal TCN detector + safety-gated recovery FSM  ·  high-level view</text>
+
+  <!-- ===================== OFFLINE band ===================== -->
+  <rect x="40" y="84" width="1160" height="150" rx="10" fill="#EEF3FA" stroke="#C2D0E4" stroke-width="1.3" stroke-dasharray="6 4"/>
+  <text x="56" y="106" class="band" fill="#3B5B92">OFFLINE  ·  research &amp; training  (PyTorch, dev machine)</text>
+
+  <!-- A dataset -->
+  <rect x="70" y="130" width="228" height="78" rx="8" fill="#E8EEF7" stroke="#3B5B92" stroke-width="1.6"/>
+  <text x="184" y="158" text-anchor="middle" class="btitle">Dataset</text>
+  <text x="184" y="177" text-anchor="middle" class="bdesc">25 GO2 recordings · /lowstate CSV</text>
+  <text x="184" y="193" text-anchor="middle" class="bdesc">15 positive / 10 negative · +Lock</text>
+
+  <!-- B preprocess -->
+  <rect x="340" y="130" width="228" height="78" rx="8" fill="#E8EEF7" stroke="#3B5B92" stroke-width="1.6"/>
+  <text x="454" y="158" text-anchor="middle" class="btitle">Preprocess</text>
+  <text x="454" y="177" text-anchor="middle" class="bdesc">resample 500 Hz · 60 ch (48 raw+12 eng)</text>
+  <text x="454" y="193" text-anchor="middle" class="bdesc">sliding window 0.40 s (200 samples)</text>
+
+  <!-- C model -->
+  <rect x="610" y="130" width="228" height="78" rx="8" fill="#E9E6F7" stroke="#5B4B9E" stroke-width="1.6"/>
+  <text x="724" y="158" text-anchor="middle" class="btitle">Multi-task causal TCN</text>
+  <text x="724" y="177" text-anchor="middle" class="bdesc">shared encoder + 3 heads</text>
+  <text x="724" y="193" text-anchor="middle" class="bdesc">fixed split (16/4/5) + LORO-CV</text>
+
+  <!-- D artifacts -->
+  <rect x="880" y="130" width="250" height="78" rx="8" fill="#E9E6F7" stroke="#5B4B9E" stroke-width="1.6"/>
+  <text x="1005" y="158" text-anchor="middle" class="btitle">Artifacts</text>
+  <text x="1005" y="177" text-anchor="middle" class="bdesc">model.pt</text>
+  <text x="1005" y="193" text-anchor="middle" class="bdesc">normalize / intensity / calibration.json</text>
+
+  <path class="edge" d="M300,169 L336,169"/>
+  <path class="edge" d="M570,169 L606,169"/>
+  <path class="edge" d="M840,169 L876,169"/>
+
+  <!-- ===================== EXPORT connector ===================== -->
+  <rect x="450" y="256" width="440" height="42" rx="8" fill="#E1F0EE" stroke="#2E7D74" stroke-width="1.6"/>
+  <text x="670" y="277" text-anchor="middle" class="btitle" font-size="13">Export → ONNX + calib JSON</text>
+  <text x="670" y="291" text-anchor="middle" class="bdesc">deployed runtime ≡ research (verified ≈ 1e-6)</text>
+
+  <path class="edge" d="M1005,208 L1005,277 L892,277"/>
+  <path class="edge" d="M670,298 L670,372 L455,372 L455,400"/>
+  <text x="628" y="366" class="elabel">deploy to robot</text>
+
+  <!-- ===================== ONLINE band ===================== -->
+  <rect x="40" y="330" width="1160" height="300" rx="10" fill="#F0F7F0" stroke="#C4DCC4" stroke-width="1.3" stroke-dasharray="6 4"/>
+  <text x="56" y="352" class="band" fill="#3C7A3C">ONLINE  ·  on-robot deployment  (ROS 2, CPU-only)</text>
+
+  <!-- Robot -->
+  <rect x="70" y="402" width="170" height="116" rx="8" fill="#ECEFF3" stroke="#37474F" stroke-width="1.8"/>
+  <text x="155" y="440" text-anchor="middle" class="btitle">Unitree GO2</text>
+  <text x="155" y="462" text-anchor="middle" class="bdesc">Sport service</text>
+  <text x="155" y="479" text-anchor="middle" class="bdesc">sensors + actuators</text>
+  <text x="155" y="496" text-anchor="middle" class="bdesc">(physical robot)</text>
+
+  <!-- Detector node -->
+  <rect x="330" y="404" width="250" height="104" rx="8" fill="#E6F2E6" stroke="#3C7A3C" stroke-width="1.8"/>
+  <text x="455" y="436" text-anchor="middle" class="btitle">Detector node</text>
+  <text x="455" y="458" text-anchor="middle" class="bdesc">ring buffer (200) · TCN (ONNX)</text>
+  <text x="455" y="474" text-anchor="middle" class="bdesc">calibrate · debounce</text>
+  <text x="455" y="490" text-anchor="middle" class="bdesc">stationarity gate (Stop/Lock)</text>
+
+  <!-- Recovery node -->
+  <rect x="690" y="404" width="272" height="104" rx="8" fill="#FBEEDD" stroke="#B5701A" stroke-width="1.8"/>
+  <text x="826" y="436" text-anchor="middle" class="btitle">Recovery node</text>
+  <text x="826" y="458" text-anchor="middle" class="bdesc">FSM (10 states) · StrategyManager</text>
+  <text x="826" y="474" text-anchor="middle" class="bdesc">closed-loop strategy ladder</text>
+  <text x="826" y="490" text-anchor="middle" class="bdesc">dry-run actuation gate</text>
+
+  <!-- Operator / logs -->
+  <rect x="1020" y="430" width="150" height="52" rx="8" fill="#ECEFF3" stroke="#37474F" stroke-width="1.5"/>
+  <text x="1095" y="452" text-anchor="middle" class="btitle" font-size="13">Operator</text>
+  <text x="1095" y="470" text-anchor="middle" class="bdesc">/ logs · dashboard</text>
+
+  <!-- online edges -->
+  <path class="edge" d="M240,456 L326,456"/>
+  <rect x="232" y="426" width="102" height="19" rx="9.5" fill="#FFF6D6" stroke="#A38A1E" stroke-width="1"/>
+  <text x="283" y="439" text-anchor="middle" class="tpill">/lowstate ~500 Hz</text>
+
+  <path class="edge" d="M580,456 L686,456"/>
+  <rect x="566" y="426" width="134" height="19" rx="9.5" fill="#FFF6D6" stroke="#A38A1E" stroke-width="1"/>
+  <text x="633" y="439" text-anchor="middle" class="tpill">/entanglement_state</text>
+
+  <path class="edge" d="M962,456 L1016,456"/>
+  <rect x="948" y="410" width="120" height="18" rx="9" fill="#FFF6D6" stroke="#A38A1E" stroke-width="1"/>
+  <text x="1008" y="423" text-anchor="middle" class="tpill">/recovery_status</text>
+
+  <!-- closed loop -->
+  <path class="edge" d="M826,508 L826,596 L155,596 L155,522"/>
+  <rect x="300" y="586" width="452" height="20" rx="10" fill="#FBEEDD" stroke="#B5701A" stroke-width="1"/>
+  <text x="526" y="600" text-anchor="middle" class="tpill" fill="#8A5314">/api/sport/request (dry-run gated) → motion → new proprioception  (closed loop)</text>
+
+  <!-- ===================== legend ===================== -->
+  <g transform="translate(70,652)">
+    <rect x="0" y="0" width="16" height="12" rx="2" fill="#E8EEF7" stroke="#3B5B92"/>
+    <text x="22" y="10" class="leg">Data / train</text>
+    <rect x="120" y="0" width="16" height="12" rx="2" fill="#E9E6F7" stroke="#5B4B9E"/>
+    <text x="142" y="10" class="leg">Model / export</text>
+    <rect x="256" y="0" width="16" height="12" rx="2" fill="#E6F2E6" stroke="#3C7A3C"/>
+    <text x="278" y="10" class="leg">Detector</text>
+    <rect x="360" y="0" width="16" height="12" rx="2" fill="#FBEEDD" stroke="#B5701A"/>
+    <text x="382" y="10" class="leg">Recovery</text>
+    <rect x="470" y="0" width="16" height="12" rx="2" fill="#ECEFF3" stroke="#37474F"/>
+    <text x="492" y="10" class="leg">Robot / operator</text>
+    <rect x="612" y="0" width="16" height="12" rx="6" fill="#FFF6D6" stroke="#A38A1E"/>
+    <text x="634" y="10" class="leg">ROS 2 topic</text>
+  </g>
+</svg>
