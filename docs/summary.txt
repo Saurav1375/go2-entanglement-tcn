@@ -85,7 +85,7 @@ Machine Learning Pipeline:
                 ├────────► Detection Head
                 ├────────► Leg Head
                 └────────► Intensity Head
--> Details:
+-> Model Architecture Details:
     -> Causal:
         ->normal convolution can see, but at time t robot hasn't yet observered future
             Past   Current   Future
@@ -159,8 +159,105 @@ Machine Learning Pipeline:
         -> Leg Head: FR,FL,RR,RL, Four Logits --> indicated which leg is entangled
         -> Intensity Head: FR, FL, RR, RL intensity --> estimates the severity of entanglement for each leg
 
+    -> Number of parameters = 136k (trainable weights), lightweight
+
+-> Loss Function: Neural network learns by minimizing loss Function
+    -> detector perfroms three tasks simultaneously
+    -> L = 1.0Ldet (whether entanglememnt exists) + 1.0Lleg (identify leg) + 0.3Lint (intensity)
+    -> muti-task loss
+    ->Details:
+        - 1. Detection Loss: binary classification problem
+                BCE (Binary Cross Entropy) , eg L = -ylogp -(1-y)log(1-p), y=true label(0 or 1) and p = prob
+        - 2. Leg loss (BCE)
+        - 3. Intensity Loss: Huber Loss (regression not classfication), only masked to +ve windows
+
+-> Class Imbalance: dataset is not balanced, -ve windows much more than +ve, used weighted sampler (rare exampler recieves higher probability of being selected)
 
 
+-> Severity Score: Derived intensity index from robot physics
+    -> I(leg) = g * (d)^0.5 *r
+    -> g= probability this particular leg is entangled
+    -> d= Mahalanobis deviation, measures how abnormal does this leg look cmpared to normal walking, compute mean and covariance and compute d=(x−μ)^TΣ^−1(x−μ), it considers coorelations b/wn features
+    -> r= Resistive effor, measure how much torque is motor producin while barely moving
+        - r = mean(max(0, -thigh)/(|dq| + e))
+    -> Blend two Severity= Physics + Network == Calibrated Severity Index
 
 
+-> MOdel Selection:
+    -> WHy not LSTM/GRU?: process data sequentially, TCN processes parallely -> faster and latency matter herer for live detection
+    -> Casulity (Past + current only)
+    -> Dilated Receptive field: covers most of walking stride while keeping network smaller
+    -> CPU effieciency, 136k param , lightweight, fast
+    -> SHared encoders (instead of using three separate netwroks)
+    -> why not Gradient Boosted Trees?don't naturally model temporal sequeuences
 
+
+-> Runtime Architecture
+        Unitree Go2 sensors
+                │
+                ▼
+            /lowstate (ROS 2)
+                │
+                ▼
+        entanglement_detector node
+                │
+                ▼
+        Signal preprocessing
+                │
+                ▼
+        200-sample ring buffer
+                │
+                ▼
+        Feature engineering
+                │
+                ▼
+        Normalization
+                │
+                ▼
+        ONNX inference
+                │
+                ▼
+        Post-processing
+                │
+                ▼
+        /entanglement_state
+
+-> SUbscribe to /lowstate
+    -> This includes
+        -motor positions
+        -motor velocities
+        -torques
+        -IMU
+        -foot forces
+    -> Best effort QoS (not Reliable QoS as it increases latency)
+
+-> Adapt into 48 raw signals (36 motor + 4FF + 8IMU)
+-> Ring BUffer: Model expects 200 samples not a single instant, therefore node stores recent measeuremtn in circular buffer (memory effiecient, when new sample arrives oldes disapperas and new is appended)
+-> WHy 200?: f = 500hz, 2ms so 200 * 2 = 400ms so each prediction uses prev 0.4 sec of robot motion
+-> Feature engineering: raw 48 signals --> 60 channels (+12 engineered features)
+-> Normalization (explained above), mean and SD used from saved statistics (training dataaset)
+-> ONNX interface: instead of runnign PyTOrch, robot loads and ONNX model
+    ->Why? ONNX runtime is faster, uses less mem, fewer dependecny, designed for deployment
+    -> I.p 200 x 60 passes through TCN producing o/p
+
+-> Convert logits to probabilities using sigmoid function
+-> Blend intensity: Physcis intensity + Network intensity If = 0.5Iphysics + Inetwork
+-> Threshold = 0.5 , 0.9 for RR (to curb false positive)
+-> Debounce: raw neural network predictions fluctuate, -> prediction must remain above threshold for 75ms before becoming TRUE --> called as temporal debouncing, prevents false alarams
+-> Final Output:
+    publishes /entanglement_state, contains:
+        -Debounced entanglement flag
+        -Confidence score
+        -Four leg probabilities
+        -Four intensity estimates
+        -Alarm leg
+
+->Stationary Gate: solves practical problem discovered using testing
+    - Problem: Walikng --> Stops --> Locks , detector reports ENtangled, sly for standing in rigid Lock position
+    - Detection stationarity: node computes mean absolute joint velocity
+        - if mean vel < 0.30rad/s for 100ms , robot is considered stationary
+    -What happens?
+        - Clear the ring buffer (old memory discarded otherwise next prediction would still include outdated walking data)
+        - Reset the debounce counter (prevents false alrams)
+        - Start a supression timer (when robots starts moving again, detetction ignore prediction for 300ms, allowd gait to stabilize)
+    -Disabled during reasearch expt so runtime Pipeline remained identicasl to evalutaion pipeline, turned on during deployment.
