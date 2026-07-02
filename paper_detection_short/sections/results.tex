@@ -1,0 +1,24 @@
+\section{Results}
+
+Every number below comes from offline replay of recorded logs; we make no claim about live on-robot detection performance.
+
+\subsection{Detection on the held-out test split}
+Table~\ref{tab:detection} compares the TCN against a rule-based baseline that thresholds thigh torque, under an identical protocol on the same five test recordings. The TCN reaches precision $0.799$, recall $0.818$, and $F1 = 0.809$, with $\text{PR-AUC} = 0.808$ and $\text{ROC-AUC} = 0.956$. The baseline attains comparable precision ($0.735$) but collapses on recall ($0.131$), for $F1 = 0.222$: a fixed threshold catches only the most violent snags and misses the many entanglements that manifest as sustained resistive effort rather than a single spike. The gap in $F1$ ($0.809$ vs.\ $0.222$) and in multi-label exact-match ($0.908$ vs.\ $0.106$) is the central detection result. At the operating point (raw threshold $0.9999$) the errors are TP $2833$, FP $712$, FN $630$, TN $9126$, roughly balanced between false alarms and misses; the ROC-AUC of $0.956$ confirms strong ranking, while the lower PR-AUC of $0.808$ is expected under the heavy class imbalance.
+
+\subsection{Generalization across recordings (LORO)}
+Because a single split samples only a handful of events, we also run leave-one-recording-out (LORO) cross-validation, retraining with each positive recording held out in turn. Across the 15 folds in Fig.~\ref{fig:loro}, $F1 = 0.807 \pm 0.142$, closely tracking the test-split value and indicating the split is representative rather than lucky. The spread is uneven: the weakest folds are the front-right recording (the least represented leg) and the deployment recordings that capture entanglement while the robot stands at rest, a regime that differs most from the walking-dominated remainder.
+
+\subsection{Per-leg attribution}
+Naming the affected leg is the other half of the task. Table~\ref{tab:perleg} gives per-leg detection on the test split. Recall is high across all four legs (FR/FL $1.000$, RR $0.959$, RL $0.916$), so genuine events are rarely missed; the differences are in precision. Front-right shows a clear trade-off, recovering every event (recall $1.000$) at precision $0.467$ for $F1 = 0.636$, the lowest of the four. This matches the LORO finding: FR has the fewest positive appearances, so the model fires readily on it. The other legs are stronger (FL $0.845$, RL $0.823$, RR $0.700$).
+
+\subsection{Calibration}
+A detector's probabilities are only useful if a threshold can be set from them. The raw network is over-confident: about $27\%$ of window probabilities pin near $1.0$, which forces the false-alarm-controlled threshold to clamp at $0.9999$. Temperature scaling with $T = 5.918$ de-saturates the output and lets the operating threshold move to a usable $0.963$. The effect on scoring is mixed: the Brier score improves slightly ($0.128 \to 0.118$), but the expected calibration error does \emph{not} ($0.134 \to 0.156$). Scaling therefore buys a de-clamped, interpretable threshold, not better calibration in the ECE sense.
+
+\subsection{Feature ablation}
+Retraining with feature groups removed and re-running LORO gives the change in $F1$ relative to the full 60-channel set. Raw kinematics are essential: the engineered channels alone drop $F1$ by $0.13$. The engineered channels still earn their place (raw-only sits $0.03$ below the full set), foot contacts matter little ($-0.01$), and the IMU is effectively redundant (dropping it leaves $F1$ unchanged to two decimals). Joint position, velocity, and torque do the work; the snag-signature channels add a small margin.
+
+\subsection{Deployment robustness}
+Offline test metrics miss failure modes that appear on specific field recordings, so we retrained with targeted data augmentation and measured per-phase firing rates before (v1) and after (v2); Fig.~\ref{fig:field} summarizes them. Four false-fire modes fell to essentially zero: Lock firing on \texttt{lock\_stop} ($0.8 \to 0.0$) and \texttt{walk\_stop\_back}-Lock ($4.7 \to 0.0$), rear-right firing while stopped ($100 \to 0$), and backward-walking firing ($9.7 \to 0$). On the dedicated front-right event, binary firing rose from $30.7\%$ to $78.5\%$ and correct-leg firing from $4\%$ to $100\%$. This was not free: the hard-negative recordings cost a little accuracy on the original, easier protocol in exchange for removing the field false-fire modes.
+
+\subsection{Runtime}
+On the deployment ONNX runtime on a single CPU thread (a development-machine benchmark, not the Go2's onboard computer), mean and median latency are about $1.0$~ms/window with a p95 near $1.3$~ms, under the $2.0$~ms budget at $500$~Hz; the model is about $0.5$~MB. The runtime reproduces the research pipeline to within $\leq 3.8\times10^{-7}$ (detection), $6.3\times10^{-7}$ (per-leg), and $2.1\times10^{-7}$ (intensity), so the offline metrics transfer to the deployed node to roughly $10^{-6}$.

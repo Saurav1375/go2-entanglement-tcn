@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.5}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.6}
+      .note{fill:#FBFBFB;stroke:#CFCFCF;stroke-width:1;stroke-dasharray:4 3}
+      .t{font-size:14px;font-weight:700;fill:#111}
+      .s{font-size:11.5px;fill:#333}
+      .e{stroke:#1A1A1A;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+      .thin{stroke:#2F5D8A;stroke-width:1.4;fill:none;marker-end:url(#ar)}
+      .cap{font-size:11.5px;font-weight:700;fill:#2F5D8A}
+      .an{font-size:11px;fill:#555;font-style:italic}
+    </style>
+  </defs>
+  <rect width="1440" height="520" fill="#FFFFFF"/>
+
+  <!-- main chain (left to right) -->
+  <rect class="box" x="26" y="80" width="150" height="96" rx="6"/>
+  <text x="101" y="122" text-anchor="middle" class="t">Input</text>
+  <text x="101" y="144" text-anchor="middle" class="s">60 x 200</text>
+  <text x="101" y="162" text-anchor="middle" class="s">(channels x time)</text>
+
+  <rect class="box" x="212" y="80" width="170" height="96" rx="6"/>
+  <text x="297" y="116" text-anchor="middle" class="t">Causal conv</text>
+  <text x="297" y="136" text-anchor="middle" class="t">stem</text>
+  <text x="297" y="158" text-anchor="middle" class="s">60 &#8594; 64</text>
+
+  <rect class="acc" x="418" y="70" width="300" height="116" rx="6"/>
+  <text x="568" y="104" text-anchor="middle" class="t">5 residual TCN blocks</text>
+  <text x="568" y="128" text-anchor="middle" class="s">dilations 1, 2, 4, 8, 16</text>
+  <text x="568" y="148" text-anchor="middle" class="s">kernel 3, GELU, dropout 0.1</text>
+  <text x="568" y="170" text-anchor="middle" class="cap">receptive field 127 samples (254 ms)</text>
+
+  <rect class="box" x="754" y="80" width="170" height="96" rx="6"/>
+  <text x="839" y="116" text-anchor="middle" class="t">Last-timestep</text>
+  <text x="839" y="136" text-anchor="middle" class="t">embedding</text>
+  <text x="839" y="158" text-anchor="middle" class="s">64-D</text>
+
+  <!-- heads -->
+  <rect class="box" x="1010" y="40" width="210" height="56" rx="6"/>
+  <text x="1115" y="63" text-anchor="middle" class="t">Detection head</text>
+  <text x="1115" y="82" text-anchor="middle" class="s">1 logit &#8594; sigmoid</text>
+
+  <rect class="box" x="1010" y="112" width="210" height="56" rx="6"/>
+  <text x="1115" y="135" text-anchor="middle" class="t">Leg head</text>
+  <text x="1115" y="154" text-anchor="middle" class="s">4 logits (FR/FL/RR/RL)</text>
+
+  <rect class="box" x="1010" y="184" width="210" height="56" rx="6"/>
+  <text x="1115" y="207" text-anchor="middle" class="t">Intensity head</text>
+  <text x="1115" y="226" text-anchor="middle" class="s">4 per-leg severities</text>
+
+  <path class="e" d="M176,128 L210,128"/>
+  <path class="e" d="M382,128 L416,128"/>
+  <path class="e" d="M718,128 L752,128"/>
+  <path class="e" d="M924,128 L968,128 L968,68 L1008,68"/>
+  <path class="e" d="M924,128 L968,128 L968,140 L1008,140"/>
+  <path class="e" d="M924,128 L968,128 L968,212 L1008,212"/>
+
+  <text x="568" y="205" text-anchor="middle" class="an">causal = left-padded only; prediction uses past + present, never future</text>
+  <text x="839" y="205" text-anchor="middle" class="an">~136k parameters</text>
+
+  <!-- residual block inset -->
+  <rect class="note" x="120" y="270" width="1200" height="220" rx="8"/>
+  <text x="140" y="298" class="cap">Residual TCN block (one of five; dilation d increases 1&#8594;2&#8594;4&#8594;8&#8594;16)</text>
+
+  <g>
+    <rect class="box" x="150" y="330" width="130" height="60" rx="6"/><text x="215" y="360" text-anchor="middle" class="t">Causal</text><text x="215" y="378" text-anchor="middle" class="s">Conv (k=3, d)</text>
+    <rect class="box" x="322" y="330" width="90" height="60" rx="6"/><text x="367" y="366" text-anchor="middle" class="t">GELU</text>
+    <rect class="box" x="454" y="330" width="130" height="60" rx="6"/><text x="519" y="360" text-anchor="middle" class="t">Causal</text><text x="519" y="378" text-anchor="middle" class="s">Conv (k=3, d)</text>
+    <rect class="box" x="626" y="330" width="90" height="60" rx="6"/><text x="671" y="366" text-anchor="middle" class="t">GELU</text>
+    <rect class="box" x="758" y="330" width="100" height="60" rx="6"/><text x="808" y="366" text-anchor="middle" class="t">Dropout</text>
+    <circle cx="940" cy="360" r="22" fill="#FFFFFF" stroke="#1A1A1A" stroke-width="1.5"/><text x="940" y="367" text-anchor="middle" class="t">+</text>
+    <rect class="box" x="1010" y="330" width="120" height="60" rx="6"/><text x="1070" y="366" text-anchor="middle" class="t">Output</text>
+
+    <path class="e" d="M280,360 L320,360"/>
+    <path class="e" d="M412,360 L452,360"/>
+    <path class="e" d="M584,360 L624,360"/>
+    <path class="e" d="M716,360 L756,360"/>
+    <path class="e" d="M858,360 L916,360"/>
+    <path class="e" d="M962,360 L1008,360"/>
+    <!-- residual skip -->
+    <path class="thin" d="M150,430 L940,430 L940,384"/>
+    <text x="500" y="452" class="an">identity skip connection: learn x + F(x), stabilizes deep training</text>
+  </g>
+</svg>

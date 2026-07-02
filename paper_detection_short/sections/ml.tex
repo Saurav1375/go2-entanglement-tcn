@@ -1,0 +1,23 @@
+\subsection{Machine Learning Pipeline}
+
+Every 0.40\,s window (200 samples at 500\,Hz, 60 channels) must yield three answers at once: whether any leg is entangled, which leg, and how severe. The detector also faces a hard operational constraint: at time $t$ it sees a stream ending at the current instant and can never look ahead. We use a temporal convolutional network (TCN) \cite{bai2018tcn} because it meets this constraint by construction, processes a whole window in parallel rather than step by step, and extends its temporal reach cheaply through dilation. Figure~\ref{fig:tcn} shows the architecture; Table~\ref{tab:hparams} lists the hyperparameters.
+
+Causality is enforced by left-padding: each convolution is padded only on the past side, so the output at $t$ depends on $\{x_{t-k},\dots,x_t\}$ and nothing later, following the causal-convolution idea of WaveNet \cite{oord2016wavenet}. The payoff is that the model trained offline on complete windows is numerically the same function that runs online on a growing buffer, with no train--test discrepancy from look-ahead (verified empirically below).
+
+A causal convolutional stem lifts the 60 input channels to 64, and five residual blocks follow with dilation factors $1,2,4,8,16$. Dilation inserts gaps between kernel taps, so a fixed kernel size covers an exponentially longer span as blocks stack, reaching far back in time without a matching growth in parameters. With kernel size 3 the receptive field is 127 samples (254\,ms), inside the 0.40\,s window, so the last position has seen most of a trot stride before deciding. Each block applies a causal convolution, a GELU \cite{hendrycks2016gelu}, a second causal convolution, another GELU, dropout 0.1, and an identity skip connection; both convolutions use weight normalization \cite{salimans2016weightnorm}. The skip lets each block learn a refinement of its input, which stabilises training of the stack.
+
+We read out only the last-timestep embedding, a single 64-D vector: at deployment the decision of interest is the one \emph{now}, and the last position is exactly the one whose receptive field ends at the present sample. Three linear heads follow: detection (one logit), leg attribution (four independent logits, since multiple legs may be affected), and intensity (four values). The network has 136{,}393 parameters, small enough to ship as a half-megabyte model.
+
+The tasks share one weighted objective. Detection and leg attribution use binary cross-entropy; intensity uses a Huber loss, which is robust to outliers. Detection and leg are weighted equally, and intensity is down-weighted as an auxiliary term:
+\begin{equation}
+\mathcal{L} = 1.0\,\mathrm{BCE}_{\text{det}} + 1.0\,\mathrm{BCE}_{\text{leg}} + 0.3\,\mathrm{Huber}_{\text{int}} .
+\end{equation}
+The intensity Huber ($\delta=0.1$) is computed against a physics pseudo-target, not a human label, and affected-leg elements are up-weighted $3{:}1$. This is an up-weight, not a hard mask: since most legs carry a target of zero, flat weighting would let ``predict zero everywhere'' dominate. The head therefore weakly tracks the physics target, which remains authoritative at inference. Class imbalance is handled by a class-balanced sampler plus a capped positive-class weight in each cross-entropy. Optimization uses AdamW \cite{loshchilov2019adamw} with a cosine schedule over 30 epochs (Table~\ref{tab:hparams}).
+
+Severity is reported through a physics-grounded index, because no ground-truth severity labels exist. Per leg it combines a confidence gate $g$ (the per-leg entanglement probability, so the index is near zero when the leg is not flagged), a deviation term $d$ (the Mahalanobis distance of the window's per-leg features from the walking distribution, fit on training walking data only), and a resistive-effort term $r$ (mean downward thigh torque divided by thigh speed, high when a leg pushes hard yet barely moves):
+\begin{equation}
+I_{\text{leg}} = g\,\sqrt{d\,r},
+\end{equation}
+calibrated to $[0,1]$ and reported as an index, not a measured force. The deployed value blends the network head and this physics index in equal parts.
+
+A TCN suits these requirements better than the alternatives. A recurrent network is sequential, trains one step at a time, and is awkward to keep strictly causal-equivalent between offline and online use; a gradient-boosted ensemble has no native notion of time and would need hand-built window summaries, discarding the temporal structure that separates a transient snag from a steady stance.

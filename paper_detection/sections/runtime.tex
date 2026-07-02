@@ -1,0 +1,41 @@
+\subsection{Runtime Architecture}
+\label{sec:runtime}
+
+On the robot the detector is a ROS~2 node that turns the raw telemetry stream into a published
+state estimate. Figure~\ref{fig:runtime} shows its internal path, and Figure~\ref{fig:e2e} places
+that path in the larger picture: the same preprocessing and model serve offline training and online
+inference, and only the exported ONNX model together with the saved normalization and calibration
+statistics cross the deploy boundary.
+
+The node subscribes to \texttt{/lowstate} with \texttt{BEST\_EFFORT} quality of service. Reliable
+delivery would add retransmission latency to a stream that arrives hundreds of times per second, and
+a dropped proprioceptive sample matters far less than a late one, so trading guaranteed delivery for
+low latency is the right call. Each message is adapted into the 48 raw signals the model expects and
+pushed into a 200-sample circular ring buffer; the buffer holds memory and per-sample cost constant,
+since the oldest sample is overwritten as each new one arrives rather than reallocating a growing
+window. Once the buffer is full it is expanded to the 60-channel representation and normalized with
+the statistics saved at training time.
+
+Inference runs through ONNX Runtime rather than PyTorch. The exported graph loads faster, uses less
+memory, and removes the training-framework dependency from the robot, which matters on a constrained
+onboard target~\cite{onnxruntime,macenski2022ros2}. The detection logit is passed through a sigmoid
+and, separately, through a temperature-scaled sigmoid ($T=5.918$) to produce the reported confidence;
+the per-leg severity is the equal-weight blend of the network head and the physics index. Raw network
+predictions flicker from sample to sample, so a detection is latched only after the raw probability
+stays above threshold for 75~ms. That short temporal debounce suppresses isolated spikes without
+noticeably delaying a genuine alarm. Per-leg thresholds then name the affected leg, with the
+rear-right threshold raised to 0.9 because that leg was the most prone to false positives; the others
+use 0.5. Operating-point values are collected in Table~\ref{tab:oppoint}. The node publishes
+\texttt{/entanglement\_state}, carrying the debounced flag, the calibrated confidence, four per-leg
+probabilities, four per-leg severities, and the name of the alarm leg.
+
+\subsubsection{Stationarity gate}
+One failure mode surfaced only in testing. When the robot walks, stops, and then stiffens into the
+rigid Lock stance it holds after standing up, the ring buffer still contains the tail of the walking
+motion, and the detector can briefly report entanglement for a robot that is simply standing still.
+The gate that fixes this watches the mean absolute joint velocity: when it falls below 0.30~rad/s for
+100~ms the robot is treated as stationary, and the node clears the ring buffer, resets the debounce
+counter, and arms a 300~ms suppression window that ignores the transient while gait is re-acquired.
+The gate is edge-triggered, so it acts once on the transition rather than continuously. It is disabled
+in the research configuration so that the evaluation pipeline is byte-identical to the deployed one,
+and enabled only on the robot.

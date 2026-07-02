@@ -1,0 +1,22 @@
+\subsection{Feature Engineering}
+\label{sec:feat}
+
+A temporal convolution assumes a fixed sampling interval: a filter of a given length always spans the same number of milliseconds, and dilations correspond to fixed time offsets. Fed the non-uniform raw logs, a 200-sample window would cover a different physical duration in each recording and the learned filters would mean different things across files. We therefore resample every recording onto a common 500~Hz grid (a 2~ms step): continuous signals by linear interpolation, and the categorical \texttt{Status} label by nearest-neighbor, which preserves each row's discrete phase rather than blending two labels.
+
+The result is a 60-channel per-timestep representation (Table~\ref{tab:features}). Forty-eight are raw: the 36 motor channels (four legs $\times$ \{hip, thigh, calf\} $\times$ \{$q,dq,\tau$\}), the 4 foot-contact forces, and 8 IMU channels. We keep roll, pitch, and the gyroscope and accelerometer axes but drop yaw, which integrates the yaw rate with no fixed reference on level ground and would tie the features to an arbitrary heading.
+
+The remaining 12 channels are engineered, three per leg, to encode the mechanical signature of a snag. When a leg catches, the motor keeps commanding motion but the limb cannot move, so the joint develops a large torque while its velocity stays near zero; a raw torque channel alone misses this, because normal fast strides also produce large torques. The first feature isolates the resistive (downward) part of the thigh torque:
+\begin{equation}
+\texttt{thigh\_tau\_down} = \max(0,\, -\tau_{\text{thigh}}).
+\end{equation}
+The second expresses the ``high torque, little motion'' signature directly, with $\varepsilon = 0.05$ keeping the ratio finite when the leg is nearly still:
+\begin{equation}
+\texttt{thigh\_down\_effort} = \frac{\texttt{thigh\_tau\_down}}{|dq_{\text{thigh}}| + \varepsilon}.
+\end{equation}
+It is large when the thigh pushes hard while barely moving and small during ordinary swinging. The third sums the absolute torque across the leg's joints,
+\begin{equation}
+\texttt{tau\_sum} = \sum_{j \in \{\text{hip},\,\text{thigh},\,\text{calf}\}} |\tau_j|,
+\end{equation}
+a per-leg effort measure that helps attribute an event to the correct limb. All 60 channels are then z-score standardized using statistics estimated on training rows only, so nothing about the held-out recordings leaks into the normalization.
+
+Finally, the network reads a sliding window of 200 samples, which at 500~Hz is 0.40~s, about one trot stride: shorter than a stride it could mistake a step's normal high-torque phase for a snag, whereas a full stride separates a passing spike from a sustained resistance. Training advances the window by a hop of 25 samples for many decorrelated examples; evaluation uses a dense hop of 1 so every timestep yields a prediction, matching the online detector. A window is labeled positive when at least $50\%$ of its rows are \texttt{Entangled}; windows in the ambiguous band ($0.2$--$0.5$) are excluded from training but kept for evaluation, and \texttt{Stop}/\texttt{Lock}-dominated windows are negatives.

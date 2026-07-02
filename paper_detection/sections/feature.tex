@@ -1,0 +1,26 @@
+\subsection{Feature Engineering}
+\label{sec:feat}
+
+Raw logs from the Go2 arrive at a non-uniform rate that varies from recording to recording, roughly 410 to 500~Hz with a median near 483~Hz. A temporal convolution assumes a fixed sampling interval: a filter of a given length always spans the same number of milliseconds, and dilations correspond to fixed time offsets. If we fed the network raw logs, a window of 200 samples would cover a different physical duration in each recording, and the learned filters would mean different things across files. We therefore resample every recording onto a common 500~Hz grid (a 2~ms step) before anything else. The continuous signals (joint positions, velocities, torques, foot forces, IMU) are resampled with linear interpolation, which is a reasonable model for smooth mechanical quantities. The \texttt{Status} label is categorical, so it is resampled with nearest-neighbor interpolation, which preserves the discrete phase identity of each row rather than blending two labels into a meaningless intermediate.
+
+The resampled signal is turned into a 60-channel per-timestep representation, summarized in Table~\ref{tab:features} and sketched in Fig.~\ref{fig:feat}. Of these, 48 are raw sensor channels: the 36 motor channels (four legs, each with hip, thigh, and calf joints, each reporting position $q$, velocity $dq$, and torque $\tau$), the 4 foot-contact forces, and 8 of the IMU channels. We keep roll, pitch, the three gyroscope axes, and the three accelerometer axes, but drop yaw. Yaw is the integral of the yaw rate and has no fixed reference on level ground, so over a long recording it drifts as an unbounded integrator; feeding it to a normalizer would tie the features to an arbitrary starting heading.
+
+The remaining 12 channels are engineered, three per leg, and they encode the mechanical signature we expect entanglement to produce. The intuition is simple. When a leg snags on a wire or a bar, the motor keeps commanding motion, but the limb cannot move, so the joint develops a large torque while its velocity stays near zero. A raw torque channel alone does not capture this, because a leg also produces large torques during normal, fast strides. What distinguishes a snag is torque \emph{in the resisting direction} combined with an absence of motion. The three per-leg features make that pattern explicit.
+
+The first feature isolates the resistive component of the thigh torque, keeping only the downward (negative) part that opposes an upward pull:
+\begin{equation}
+\texttt{thigh\_tau\_down} = \max(0,\, -\tau_{\text{thigh}}).
+\end{equation}
+The second feature combines that resistive torque with the thigh velocity to express the ``high torque, little motion'' snag signature directly, using a small constant $\varepsilon = 0.05$ to keep the ratio finite when the leg is nearly still:
+\begin{equation}
+\texttt{thigh\_down\_effort} = \frac{\texttt{thigh\_tau\_down}}{|dq_{\text{thigh}}| + \varepsilon}.
+\end{equation}
+This ratio is large exactly when the thigh is pushing hard against a resistance while barely moving, which is the condition we care about, and small during ordinary swinging where velocity is high. The third feature sums the absolute torque across the leg's three joints,
+\begin{equation}
+\texttt{tau\_sum} = \sum_{j \in \{\text{hip},\,\text{thigh},\,\text{calf}\}} |\tau_j|,
+\end{equation}
+giving a scalar measure of total effort in that leg. Because it is computed per leg, it helps the model attribute an event to the correct limb rather than merely detecting that \emph{something} is stuck.
+
+All 60 channels are then standardized by z-score normalization. The mean and standard deviation for each channel are estimated on training rows only, never on validation or test rows, so no information about the held-out recordings can leak into the normalization statistics.
+
+The final step is windowing. The network reads a sliding window of 200 consecutive samples, which at 500~Hz is 0.40~s, approximately the duration of one trot stride. A window shorter than a stride could mistake the normal high-torque phase of a step for a snag, whereas one full stride gives the model enough context to tell a passing torque spike from a sustained resistance. During training we advance the window by a hop of 25 samples, which gives many overlapping examples while keeping them decorrelated; for evaluation we use a dense hop of 1 so that every timestep produces a prediction, matching how the detector runs online. A window is labeled positive when at least 50\% of its rows are marked \texttt{Entangled}. Windows in the ambiguous band, where the entangled fraction falls between 0.2 and 0.5, are excluded from training so the classifier learns from clean examples, but they are retained for evaluation so the reported metrics reflect the harder, realistic transitions. Windows dominated by the \texttt{Stop} or \texttt{Lock} phases are treated as negatives.

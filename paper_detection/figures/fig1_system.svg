@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="360" viewBox="0 0 1440 360" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.5}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.6}
+      .band{fill:#F5F5F5;stroke:#CFCFCF;stroke-width:1;stroke-dasharray:4 3}
+      .t{font-size:15px;font-weight:700;fill:#111}
+      .s{font-size:12px;fill:#333}
+      .e{stroke:#1A1A1A;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+      .bl{font-size:11.5px;font-weight:700;fill:#2F5D8A}
+    </style>
+  </defs>
+  <rect width="1440" height="360" fill="#FFFFFF"/>
+
+  <!-- A. sensing -->
+  <rect class="box" x="30" y="120" width="230" height="120" rx="6"/>
+  <text x="145" y="158" text-anchor="middle" class="t">Unitree Go2</text>
+  <text x="145" y="182" text-anchor="middle" class="s">proprioception only</text>
+  <text x="145" y="202" text-anchor="middle" class="s">/lowstate, ~500 Hz</text>
+  <text x="145" y="222" text-anchor="middle" class="s">joints, foot force, IMU</text>
+
+  <!-- B. preprocessing -->
+  <rect class="box" x="320" y="120" width="230" height="120" rx="6"/>
+  <text x="435" y="158" text-anchor="middle" class="t">Preprocessing</text>
+  <text x="435" y="182" text-anchor="middle" class="s">resample to 500 Hz</text>
+  <text x="435" y="202" text-anchor="middle" class="s">60-channel window</text>
+  <text x="435" y="222" text-anchor="middle" class="s">0.40 s (200 samples)</text>
+
+  <!-- C. model -->
+  <rect class="acc" x="610" y="110" width="250" height="140" rx="6"/>
+  <text x="735" y="150" text-anchor="middle" class="t">Causal TCN</text>
+  <text x="735" y="174" text-anchor="middle" class="s">shared temporal encoder</text>
+  <text x="735" y="194" text-anchor="middle" class="s">last-timestep embedding</text>
+  <text x="735" y="222" text-anchor="middle" class="bl">real-time, causal, ~136k params</text>
+
+  <!-- D. heads -->
+  <rect class="box" x="930" y="60" width="210" height="66" rx="6"/>
+  <text x="1035" y="88" text-anchor="middle" class="t">Detection</text>
+  <text x="1035" y="108" text-anchor="middle" class="s">is a leg entangled?</text>
+
+  <rect class="box" x="930" y="147" width="210" height="66" rx="6"/>
+  <text x="1035" y="175" text-anchor="middle" class="t">Attribution</text>
+  <text x="1035" y="195" text-anchor="middle" class="s">which leg (FR/FL/RR/RL)</text>
+
+  <rect class="box" x="930" y="234" width="210" height="66" rx="6"/>
+  <text x="1035" y="262" text-anchor="middle" class="t">Severity</text>
+  <text x="1035" y="282" text-anchor="middle" class="s">per-leg intensity 0-1</text>
+
+  <!-- E. output -->
+  <rect class="box" x="1210" y="120" width="200" height="120" rx="6"/>
+  <text x="1310" y="158" text-anchor="middle" class="t">Output</text>
+  <text x="1310" y="182" text-anchor="middle" class="s">/entanglement_state</text>
+  <text x="1310" y="202" text-anchor="middle" class="s">flag + confidence +</text>
+  <text x="1310" y="222" text-anchor="middle" class="s">per-leg prob. + severity</text>
+
+  <!-- arrows -->
+  <path class="e" d="M260,180 L318,180"/>
+  <path class="e" d="M550,180 L608,180"/>
+  <path class="e" d="M860,150 L905,150 L905,93 L928,93"/>
+  <path class="e" d="M860,180 L928,180"/>
+  <path class="e" d="M860,210 L905,210 L905,267 L928,267"/>
+  <path class="e" d="M1140,93 L1175,93 L1175,168 L1208,168"/>
+  <path class="e" d="M1140,180 L1208,180"/>
+  <path class="e" d="M1140,267 L1175,267 L1175,192 L1208,192"/>
+</svg>

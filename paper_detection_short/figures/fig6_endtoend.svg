@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="470" viewBox="0 0 1440 470" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.5}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.6}
+      .lane{fill:#F7F7F7;stroke:#CFCFCF;stroke-width:1.2;stroke-dasharray:5 4}
+      .t{font-size:13.5px;font-weight:700;fill:#111}
+      .s{font-size:11px;fill:#333}
+      .e{stroke:#1A1A1A;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+      .lbl{font-size:13px;font-weight:700;letter-spacing:.5px}
+      .bridge{stroke:#2F5D8A;stroke-width:2;fill:none;marker-end:url(#ar);stroke-dasharray:6 4}
+      .cap{font-size:11.5px;font-weight:700;fill:#2F5D8A}
+    </style>
+  </defs>
+  <rect width="1440" height="470" fill="#FFFFFF"/>
+
+  <!-- OFFLINE lane -->
+  <rect class="lane" x="20" y="40" width="1400" height="170" rx="10"/>
+  <text x="40" y="66" class="lbl" fill="#555">OFFLINE  (development)</text>
+
+  <rect class="box" x="40" y="86" width="180" height="100" rx="6"/>
+  <text x="130" y="120" text-anchor="middle" class="t">Collect + label</text>
+  <text x="130" y="142" text-anchor="middle" class="s">25 recordings</text>
+  <text x="130" y="160" text-anchor="middle" class="s">15 pos / 10 neg</text>
+
+  <rect class="box" x="270" y="86" width="200" height="100" rx="6"/>
+  <text x="370" y="120" text-anchor="middle" class="t">Feature + window</text>
+  <text x="370" y="142" text-anchor="middle" class="s">resample, 60 ch,</text>
+  <text x="370" y="160" text-anchor="middle" class="s">200-sample windows</text>
+
+  <rect class="acc" x="520" y="86" width="200" height="100" rx="6"/>
+  <text x="620" y="120" text-anchor="middle" class="t">Train TCN</text>
+  <text x="620" y="142" text-anchor="middle" class="s">multi-task loss;</text>
+  <text x="620" y="160" text-anchor="middle" class="s">LORO evaluation</text>
+
+  <rect class="box" x="770" y="86" width="200" height="100" rx="6"/>
+  <text x="870" y="120" text-anchor="middle" class="t">Calibrate</text>
+  <text x="870" y="142" text-anchor="middle" class="s">temperature +</text>
+  <text x="870" y="160" text-anchor="middle" class="s">operating point</text>
+
+  <rect class="box" x="1020" y="86" width="220" height="100" rx="6"/>
+  <text x="1130" y="120" text-anchor="middle" class="t">Export</text>
+  <text x="1130" y="142" text-anchor="middle" class="s">ONNX model +</text>
+  <text x="1130" y="160" text-anchor="middle" class="s">norm. &amp; calib. stats</text>
+
+  <path class="e" d="M220,136 L268,136"/>
+  <path class="e" d="M470,136 L518,136"/>
+  <path class="e" d="M720,136 L768,136"/>
+  <path class="e" d="M970,136 L1018,136"/>
+
+  <!-- ONLINE lane -->
+  <rect class="lane" x="20" y="270" width="1400" height="170" rx="10"/>
+  <text x="40" y="296" class="lbl" fill="#555">ONLINE  (on-robot, ROS 2)</text>
+
+  <rect class="box" x="40" y="316" width="220" height="100" rx="6"/>
+  <text x="150" y="350" text-anchor="middle" class="t">Unitree Go2</text>
+  <text x="150" y="372" text-anchor="middle" class="s">/lowstate stream</text>
+  <text x="150" y="390" text-anchor="middle" class="s">BEST_EFFORT QoS</text>
+
+  <rect class="acc" x="470" y="316" width="330" height="100" rx="6"/>
+  <text x="635" y="346" text-anchor="middle" class="t">entanglement_detector node</text>
+  <text x="635" y="368" text-anchor="middle" class="s">ring buffer &#8594; features &#8594; normalize &#8594; ONNX</text>
+  <text x="635" y="386" text-anchor="middle" class="s">&#8594; calibrate &#8594; debounce &#8594; stationarity gate</text>
+
+  <rect class="box" x="1020" y="316" width="220" height="100" rx="6"/>
+  <text x="1130" y="350" text-anchor="middle" class="t">/entanglement_state</text>
+  <text x="1130" y="372" text-anchor="middle" class="s">flag, confidence,</text>
+  <text x="1130" y="390" text-anchor="middle" class="s">per-leg prob + severity</text>
+
+  <path class="e" d="M260,366 L468,366"/>
+  <path class="e" d="M800,366 L1018,366"/>
+
+  <!-- bridge deploy -->
+  <path class="bridge" d="M1130,186 L1130,236 L635,236 L635,314"/>
+  <text x="642" y="258" class="cap">deploy: ONNX + normalization + calibration statistics</text>
+</svg>

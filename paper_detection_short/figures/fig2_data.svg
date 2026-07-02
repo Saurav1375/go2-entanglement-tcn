@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="400" viewBox="0 0 1440 400" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.5}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.6}
+      .note{fill:#F5F5F5;stroke:#CFCFCF;stroke-width:1}
+      .t{font-size:15px;font-weight:700;fill:#111}
+      .s{font-size:12px;fill:#333}
+      .e{stroke:#1A1A1A;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+      .cap{font-size:11.5px;font-weight:700;fill:#2F5D8A}
+    </style>
+  </defs>
+  <rect width="1440" height="400" fill="#FFFFFF"/>
+
+  <rect class="box" x="30" y="70" width="250" height="120" rx="6"/>
+  <text x="155" y="108" text-anchor="middle" class="t">Unitree Go2</text>
+  <text x="155" y="132" text-anchor="middle" class="s">stream /lowstate</text>
+  <text x="155" y="152" text-anchor="middle" class="s">~410-500 Hz (non-uniform)</text>
+  <text x="155" y="172" text-anchor="middle" class="s">51 columns per row</text>
+
+  <rect class="box" x="360" y="70" width="270" height="120" rx="6"/>
+  <text x="495" y="108" text-anchor="middle" class="t">Scripted scenarios</text>
+  <text x="495" y="132" text-anchor="middle" class="s">Walking &#183; Entangled</text>
+  <text x="495" y="152" text-anchor="middle" class="s">Stop &#183; Lock (stand-up)</text>
+  <text x="495" y="172" text-anchor="middle" class="s">wire / net / by-hand snags</text>
+
+  <rect class="box" x="710" y="70" width="290" height="120" rx="6"/>
+  <text x="855" y="108" text-anchor="middle" class="t">Manual labeling</text>
+  <text x="855" y="132" text-anchor="middle" class="s">recorded timestamps +</text>
+  <text x="855" y="152" text-anchor="middle" class="s">per-joint torque plots</text>
+  <text x="855" y="172" text-anchor="middle" class="s">affected leg from filename</text>
+
+  <rect class="acc" x="1080" y="70" width="300" height="120" rx="6"/>
+  <text x="1230" y="108" text-anchor="middle" class="t">Labeled dataset</text>
+  <text x="1230" y="132" text-anchor="middle" class="s">25 recordings &#183; 159,001 rows</text>
+  <text x="1230" y="152" text-anchor="middle" class="s">15 positive / 10 negative</text>
+  <text x="1230" y="172" text-anchor="middle" class="cap">one contiguous event / positive</text>
+
+  <path class="e" d="M280,130 L358,130"/>
+  <path class="e" d="M630,130 L708,130"/>
+  <path class="e" d="M1000,130 L1078,130"/>
+
+  <!-- column composition note -->
+  <rect class="note" x="30" y="250" width="1350" height="110" rx="6"/>
+  <text x="50" y="278" class="cap">Per-row signals (51 columns)</text>
+  <text x="50" y="306" class="s">36 motor channels: position q, velocity dq, torque tau  for hip / thigh / calf of each leg (FR, FL, RR, RL)</text>
+  <text x="50" y="328" class="s">4 foot-contact forces  &#183;  IMU: roll, pitch, yaw, gyroscope (x,y,z), accelerometer (x,y,z)  &#183;  Status label</text>
+  <text x="50" y="350" class="s">Phase labels: Walking, Entangled, Stop, Lock, or blank   (Lock = the rigid stance held right after standing up)</text>
+</svg>

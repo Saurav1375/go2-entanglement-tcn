@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="360" viewBox="0 0 1460 360" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.4}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.5}
+      .topic{fill:#F0F0F0;stroke:#777;stroke-width:1.3}
+      .node{fill:#FCFCFC;stroke:#1A1A1A;stroke-width:1.8}
+      .t{font-size:12.5px;font-weight:700;fill:#111}
+      .s{font-size:10.5px;fill:#333}
+      .e{stroke:#1A1A1A;stroke-width:1.5;fill:none;marker-end:url(#ar)}
+      .cap{font-size:12px;font-weight:700;fill:#111}
+      .tp{font-size:11.5px;font-weight:700;fill:#333;font-family:'DejaVu Sans Mono',monospace}
+    </style>
+  </defs>
+  <rect width="1460" height="360" fill="#FFFFFF"/>
+
+  <!-- input topic -->
+  <rect class="topic" x="20" y="150" width="150" height="70" rx="6"/>
+  <text x="95" y="180" text-anchor="middle" class="tp">/lowstate</text>
+  <text x="95" y="200" text-anchor="middle" class="s">BEST_EFFORT QoS</text>
+
+  <!-- node container -->
+  <rect class="node" x="200" y="40" width="1070" height="290" rx="10"/>
+  <text x="220" y="66" class="cap">entanglement_detector  (ROS 2 node, CPU)</text>
+
+  <!-- inner steps: two rows of small boxes -->
+  <!-- row 1 -->
+  <rect class="box" x="220" y="88" width="150" height="70" rx="5"/>
+  <text x="295" y="118" text-anchor="middle" class="t">Adapter</text>
+  <text x="295" y="138" text-anchor="middle" class="s">48 raw signals</text>
+
+  <rect class="box" x="392" y="88" width="160" height="70" rx="5"/>
+  <text x="472" y="112" text-anchor="middle" class="t">Stationarity</text>
+  <text x="472" y="130" text-anchor="middle" class="t">gate</text>
+  <text x="472" y="149" text-anchor="middle" class="s">Stop/Lock guard</text>
+
+  <rect class="box" x="574" y="88" width="150" height="70" rx="5"/>
+  <text x="649" y="112" text-anchor="middle" class="t">Ring buffer</text>
+  <text x="649" y="132" text-anchor="middle" class="s">last 200</text>
+  <text x="649" y="150" text-anchor="middle" class="s">samples</text>
+
+  <rect class="box" x="746" y="88" width="160" height="70" rx="5"/>
+  <text x="826" y="112" text-anchor="middle" class="t">Feature build</text>
+  <text x="826" y="132" text-anchor="middle" class="s">48 &#8594; 60 ch</text>
+  <text x="826" y="150" text-anchor="middle" class="s">+ normalize</text>
+
+  <rect class="acc" x="928" y="88" width="150" height="70" rx="5"/>
+  <text x="1003" y="118" text-anchor="middle" class="t">ONNX TCN</text>
+  <text x="1003" y="138" text-anchor="middle" class="s">forward pass</text>
+
+  <rect class="box" x="1100" y="88" width="150" height="70" rx="5"/>
+  <text x="1175" y="112" text-anchor="middle" class="t">Sigmoid +</text>
+  <text x="1175" y="130" text-anchor="middle" class="t">temperature</text>
+  <text x="1175" y="149" text-anchor="middle" class="s">calibrated conf.</text>
+
+  <!-- row 2 -->
+  <rect class="box" x="746" y="222" width="160" height="70" rx="5"/>
+  <text x="826" y="246" text-anchor="middle" class="t">Intensity</text>
+  <text x="826" y="264" text-anchor="middle" class="s">blend physics +</text>
+  <text x="826" y="282" text-anchor="middle" class="s">network (0.5/0.5)</text>
+
+  <rect class="box" x="928" y="222" width="322" height="70" rx="5"/>
+  <text x="1089" y="246" text-anchor="middle" class="t">Threshold + debounce (75 ms) + per-leg gate</text>
+  <text x="1089" y="266" text-anchor="middle" class="s">raw thr 0.9999 (calib. 0.963); per-leg 0.5, RR 0.9</text>
+  <text x="1089" y="284" text-anchor="middle" class="s">sustained-detection latch curbs flicker</text>
+
+  <!-- inner arrows row1 -->
+  <path class="e" d="M370,123 L390,123"/>
+  <path class="e" d="M552,123 L572,123"/>
+  <path class="e" d="M724,123 L744,123"/>
+  <path class="e" d="M906,123 L926,123"/>
+  <path class="e" d="M1078,123 L1098,123"/>
+  <!-- wrap to row2 -->
+  <path class="e" d="M1175,158 L1175,190 L826,190 L826,220"/>
+  <path class="e" d="M906,257 L926,257"/>
+
+  <!-- input arrow -->
+  <path class="e" d="M170,185 L200,185 L200,123 L218,123"/>
+
+  <!-- output topic -->
+  <rect class="topic" x="1300" y="222" width="150" height="92" rx="6"/>
+  <text x="1375" y="248" text-anchor="middle" class="tp">/entangle-</text>
+  <text x="1375" y="264" text-anchor="middle" class="tp">ment_state</text>
+  <text x="1375" y="286" text-anchor="middle" class="s">flag, conf., 4x prob,</text>
+  <text x="1375" y="302" text-anchor="middle" class="s">4x severity, alarm leg</text>
+  <path class="e" d="M1250,257 L1298,257"/>
+</svg>

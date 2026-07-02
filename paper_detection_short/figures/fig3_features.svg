@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="440" viewBox="0 0 1440 440" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#1A1A1A"/></marker>
+    <style>
+      .box{fill:#FFFFFF;stroke:#1A1A1A;stroke-width:1.5}
+      .acc{fill:#EAF0F7;stroke:#2F5D8A;stroke-width:1.6}
+      .note{fill:#F5F5F5;stroke:#CFCFCF;stroke-width:1}
+      .t{font-size:14px;font-weight:700;fill:#111}
+      .s{font-size:11.5px;fill:#333}
+      .m{font-size:12px;fill:#111;font-family:'DejaVu Sans Mono',monospace}
+      .e{stroke:#1A1A1A;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+      .cap{font-size:11.5px;font-weight:700;fill:#2F5D8A}
+    </style>
+  </defs>
+  <rect width="1440" height="440" fill="#FFFFFF"/>
+
+  <!-- top pipeline row -->
+  <rect class="box" x="24" y="40" width="185" height="96" rx="6"/>
+  <text x="116" y="74" text-anchor="middle" class="t">Raw recording</text>
+  <text x="116" y="96" text-anchor="middle" class="s">non-uniform rate</text>
+  <text x="116" y="114" text-anchor="middle" class="s">~410-500 Hz</text>
+
+  <rect class="box" x="255" y="40" width="205" height="96" rx="6"/>
+  <text x="357" y="70" text-anchor="middle" class="t">Resample 500 Hz</text>
+  <text x="357" y="92" text-anchor="middle" class="s">linear interp: signals</text>
+  <text x="357" y="110" text-anchor="middle" class="s">nearest: Status label</text>
+
+  <rect class="box" x="506" y="40" width="185" height="96" rx="6"/>
+  <text x="598" y="74" text-anchor="middle" class="t">48 raw channels</text>
+  <text x="598" y="96" text-anchor="middle" class="s">36 motor + 4 foot</text>
+  <text x="598" y="114" text-anchor="middle" class="s">+ 8 IMU (yaw dropped)</text>
+
+  <rect class="acc" x="737" y="40" width="205" height="96" rx="6"/>
+  <text x="839" y="70" text-anchor="middle" class="t">+ 12 engineered</text>
+  <text x="839" y="92" text-anchor="middle" class="s">physics features</text>
+  <text x="839" y="110" text-anchor="middle" class="s">(3 per leg) &#8594; 60 ch</text>
+
+  <rect class="box" x="988" y="40" width="175" height="96" rx="6"/>
+  <text x="1075" y="74" text-anchor="middle" class="t">z-score</text>
+  <text x="1075" y="96" text-anchor="middle" class="s">train-set stats</text>
+  <text x="1075" y="114" text-anchor="middle" class="s">(no leakage)</text>
+
+  <rect class="box" x="1209" y="40" width="207" height="96" rx="6"/>
+  <text x="1312" y="70" text-anchor="middle" class="t">Sliding window</text>
+  <text x="1312" y="92" text-anchor="middle" class="s">200 x 60  (0.40 s)</text>
+  <text x="1312" y="110" text-anchor="middle" class="s">hop 25 train / 1 eval</text>
+
+  <path class="e" d="M209,88 L253,88"/>
+  <path class="e" d="M460,88 L504,88"/>
+  <path class="e" d="M691,88 L735,88"/>
+  <path class="e" d="M942,88 L986,88"/>
+  <path class="e" d="M1163,88 L1207,88"/>
+
+  <!-- engineered feature detail -->
+  <rect class="note" x="24" y="200" width="900" height="210" rx="6"/>
+  <text x="44" y="228" class="cap">Engineered physics features (per leg; incorporate domain knowledge of a held-back leg)</text>
+  <text x="44" y="262" class="t">thigh_tau_down</text>
+  <text x="300" y="262" class="m">= max(0, -tau_thigh)</text>
+  <text x="44" y="284" class="s">retains only resistive (downward) thigh torque; a snag pulls the leg down against the motor</text>
+
+  <text x="44" y="318" class="t">thigh_down_effort</text>
+  <text x="300" y="318" class="m">= thigh_tau_down / (|dq_thigh| + 0.05)</text>
+  <text x="44" y="340" class="s">high torque with little motion = motor working hard but joint barely moving (the signature of a snag)</text>
+
+  <text x="44" y="374" class="t">tau_sum</text>
+  <text x="300" y="374" class="m">= sum_j |tau_j|,  j in {hip, thigh, calf}</text>
+  <text x="44" y="396" class="s">total per-leg effort regardless of direction; supports which-leg attribution</text>
+
+  <!-- windowing detail -->
+  <rect class="note" x="960" y="200" width="456" height="210" rx="6"/>
+  <text x="980" y="228" class="cap">Why 0.40 s windows?</text>
+  <text x="980" y="258" class="s">200 samples x 2 ms = 400 ms &#8776; one trot</text>
+  <text x="980" y="278" class="s">gait stride (swing + stance). A single</text>
+  <text x="980" y="298" class="s">instant cannot separate a snag from</text>
+  <text x="980" y="318" class="s">normal gait variation; one stride carries</text>
+  <text x="980" y="338" class="s">the discriminative temporal context.</text>
+  <text x="980" y="372" class="s">Window is positive if &#8805; 50% of its rows are</text>
+  <text x="980" y="392" class="s">Entangled; ambiguous (0.2-0.5) held out of training.</text>
+</svg>
