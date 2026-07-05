@@ -42,6 +42,7 @@ import sys
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_srvs.srv import Trigger
 
 from entanglement_interfaces.msg import EntanglementState
@@ -85,14 +86,19 @@ class FrontJumpRecoveryNode(Node):
         self._iface = p("network_interface", "eth0").value
         topic = p("entanglement_topic", "/entanglement_state").value
         self._min_intensity = float(p("min_intensity", 0.0).value)
-        self._confirm_count = max(1, int(p("confirm_count", 3).value))
+        self._confirm_count = max(1, int(p("confirm_count", 1).value))
 
         self._state = _State.NORMAL
         self._consec = 0                 # consecutive qualifying alarms (pre-latch)
+        self._require_clear = False      # after a jump/reset, wait for one non-entangled frame
         self._worker: subprocess.Popen | None = None
         self._worker_ready = False
 
-        self.create_subscription(EntanglementState, topic, self._on_entanglement, 10)
+        # Match the detector's /entanglement_state publisher (RELIABLE/KEEP_LAST); pin it
+        # explicitly so the contract can't silently drift.
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
+                         history=HistoryPolicy.KEEP_LAST)
+        self.create_subscription(EntanglementState, topic, self._on_entanglement, qos)
         self.create_service(Trigger, "/recovery/reset", self._handle_reset)
         self._watchdog = self.create_timer(0.5, self._watchdog_tick)
 
@@ -112,7 +118,10 @@ class FrontJumpRecoveryNode(Node):
             self._worker = subprocess.Popen(
                 [sys.executable, _WORKER_SCRIPT, self._iface],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, env=_clean_env())
+                # Discard the SDK's own (possibly chatty) stderr rather than merging it into
+                # the handshake pipe, so verbose CycloneDDS logging can't back up the pipe and
+                # block the worker mid-command. The worker reports failures on stdout (ERROR:).
+                stderr=subprocess.DEVNULL, text=True, env=_clean_env())
             self._worker_ready = False
             self.get_logger().info(
                 "[JUMP] sport_worker launching (pid={})...".format(self._worker.pid))
@@ -152,21 +161,26 @@ class FrontJumpRecoveryNode(Node):
             self._worker = None
             self._launch_worker()
             return
-        if not self._worker_ready:                     # drain the READY/ERROR/DONE handshake
+        # Drain the worker's stdout each tick (bounded loop) so the pipe never backs up.
+        # Lines are the short handshake tokens READY / ERROR: / DONE <code>.
+        for _ in range(20):
             r, _, _ = _select.select([w.stdout], [], [], 0)
-            if r:
-                line = w.stdout.readline().strip()
-                if line == "READY":
+            if not r:
+                break
+            raw = w.stdout.readline()
+            if raw == "":                              # pipe closed
+                break
+            line = raw.strip()
+            if not line:
+                continue
+            if line == "READY":
+                if not self._worker_ready:
                     self._worker_ready = True
                     self.get_logger().info("[JUMP] sport_worker ready (SDK initialised).")
-                elif line.startswith("ERROR"):
-                    self.get_logger().error("[JUMP] sport_worker {}".format(line))
-        else:
-            r, _, _ = _select.select([w.stdout], [], [], 0)
-            if r:
-                line = w.stdout.readline().strip()
-                if line:
-                    self.get_logger().info("[JUMP] sport_worker: {}".format(line))
+            elif line.startswith("ERROR"):
+                self.get_logger().error("[JUMP] sport_worker {}".format(line))
+            else:
+                self.get_logger().info("[JUMP] sport_worker: {}".format(line))
 
     # ------------------------------------------------------------------ alarm
     def _on_entanglement(self, msg):
@@ -174,6 +188,12 @@ class FrontJumpRecoveryNode(Node):
             return
         if not msg.entangled:
             self._consec = 0
+            self._require_clear = False   # a clear frame re-arms after a jump/reset
+            return
+        # After a jump or a reset we require at least one non-entangled frame before counting
+        # toward the next jump, so resetting while the leg is still entangled cannot immediately
+        # re-jump (belt-and-suspenders on top of the LATCHED guard).
+        if self._require_clear:
             return
         max_intensity = max(msg.fr_intensity, msg.fl_intensity,
                             msg.rr_intensity, msg.rl_intensity)
@@ -196,15 +216,18 @@ class FrontJumpRecoveryNode(Node):
                 msg.alarm_leg or "?", msg.confidence, max_intensity))
         self._send("jump")
         self._state = _State.LATCHED     # latch immediately: jump exactly once
+        self._require_clear = True       # after reset, require a clear frame before any re-jump
 
     # ------------------------------------------------------------------ reset
     def _handle_reset(self, _request, response):
         if self._state is _State.LATCHED:
             self._state = _State.NORMAL
             self._consec = 0
+            self._require_clear = True   # wait for a non-entangled frame before re-arming
             response.success = True
-            response.message = "Front-jump latch cleared; re-armed for the next alarm."
-            self.get_logger().info("[JUMP] latch cleared — re-armed.")
+            response.message = ("Front-jump latch cleared; will re-arm after a non-entangled "
+                                "frame, then act on the next sustained alarm.")
+            self.get_logger().info("[JUMP] latch cleared — will re-arm after a clear frame.")
         else:
             response.success = False
             response.message = "No active latch — nothing to clear."

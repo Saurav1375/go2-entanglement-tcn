@@ -14,6 +14,7 @@ entanglement_recovery:
     min_intensity: 0.0
 
     # Consecutive qualifying alarm messages required before committing to the jump.
-    # The detector output is already debounced, so this is a small extra guard against a
-    # single stray frame triggering a high-consequence jump.
-    confirm_count: 3
+    # 1 = jump on the FIRST detection (no added latency); the detector output is already
+    # debounced, so a single message is a confirmed detection. Raise only if you want extra
+    # confirmation at the cost of a few milliseconds.
+    confirm_count: 1
