@@ -1,0 +1,22 @@
+# Configuration for the entanglement recovery (emergency-stop) supervisor node.
+
+entanglement_recovery:
+  ros__parameters:
+    # Network interface used by the Unitree SDK2 DDS transport.
+    # On Go2: use "eth0" (192.168.123.x internal ethernet — sport mode runs here).
+    # Do NOT use wlan0 (external WiFi) or tailscale0 (no multicast).
+    # Check available interfaces with: ip a
+    network_interface: "eth0"
+
+    # Rate at which StopMove() is re-sent while the emergency stop is latched.
+    # 20 Hz is sufficient to dominate any competing remote-controller input.
+    stop_hz: 20.0
+
+    # Optional intensity gate (0.0 = trigger on any alarm).
+    # If every per-leg intensity value from the detector is below this threshold,
+    # the alarm is ignored at the supervisor level.  Set to 0.0 to disable gating
+    # and let the detector's own debounce + threshold be the sole filter.
+    min_intensity: 0.0
+
+    # Topic published by the detector node.
+    entanglement_topic: "/entanglement_state"
