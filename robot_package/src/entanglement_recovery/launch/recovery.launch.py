@@ -1,6 +1,12 @@
-"""Launch the recovery node alone (assumes the detector is already running).
+"""Launch the front-jump recovery node alone (assumes the detector is already running).
 
-Override the safety gate at launch:  ros2 launch entanglement_recovery recovery.launch.py enable_actuation:=true
+    ros2 launch entanglement_recovery recovery.launch.py
+
+Optionally override the network interface used by the Unitree SDK2:
+    ros2 launch entanglement_recovery recovery.launch.py network_interface:=eth0
+
+WARNING: this node actuates the robot (a real front jump) on a sustained
+entanglement alarm. Ensure flat ground, clearance ahead, and adequate battery.
 """
 import os
 
@@ -14,15 +20,16 @@ from launch_ros.actions import Node
 def generate_launch_description():
     share = get_package_share_directory("entanglement_recovery")
     config = os.path.join(share, "config", "recovery.yaml")
-    enable = LaunchConfiguration("enable_actuation")
+    iface = LaunchConfiguration("network_interface")
     return LaunchDescription([
-        DeclareLaunchArgument("enable_actuation", default_value="false",
-                              description="true actuates the robot; false = dry-run"),
+        DeclareLaunchArgument(
+            "network_interface", default_value="eth0",
+            description="Interface for the Unitree SDK2 DDS (Go2 internal ethernet = eth0)"),
         Node(
             package="entanglement_recovery",
             executable="recovery_node",
             name="entanglement_recovery",
             output="screen",
-            parameters=[config, {"enable_actuation": enable}],
+            parameters=[config, {"network_interface": iface}],
         ),
     ])

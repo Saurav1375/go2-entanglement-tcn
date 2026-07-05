@@ -1,70 +1,19 @@
-# Recovery framework configuration. Every timer/threshold/topic is here — no magic numbers
-# in code. See docs/RECOVERY_CONFIG.md for the annotated reference.
+# Front-jump recovery configuration.
 entanglement_recovery:
   ros__parameters:
-    # ---- SAFETY GATE ----
-    # false (default) = DRY-RUN: the state machine runs and logs the commands it WOULD send,
-    # but sends NOTHING to the robot. Set true ONLY after dry-run validation on hardware.
-    enable_actuation: false
-    auto_arm: true                  # begin MONITORING at startup
-    control_rate_hz: 50.0           # FSM tick rate
+    # Network interface for the Unitree SDK2 DDS transport.
+    # On the Go2 use "eth0" (192.168.123.x internal ethernet where sport mode runs).
+    # Do NOT use wlan0 (external WiFi) or a VPN interface (no multicast).
+    network_interface: "eth0"
 
-    # ---- gating / confirmation ----
-    confirmation_time_s: 0.5        # sustained detection required before acting (rejects noise)
-    confidence_min: 0.0             # ignore detections below this calibrated confidence
-
-    # ---- command execution ----
-    command_timeout_s: 1.0          # wait for /api/sport/response before retrying
-    retry_limit: 2                  # retries per command before FAULT
-    stop_settle_s: 0.5              # settle after StopMove ack
-    recovery_settle_s: 2.0          # settle after BalanceStand/RecoveryStand ack
-
-    # ---- verification / resume ----
-    verification_duration_s: 1.5    # detector must read clear this long to confirm success
-    verify_timeout_s: 4.0           # still entangled this long -> re-attempt recovery
-    resume_delay_s: 1.0             # hold a stable stance before handing control back
-    cooldown_s: 5.0                 # ignore new triggers after a cycle (anti-thrash)
-
-    # ---- robustness / safety ----
-    robot_state_timeout_s: 0.5      # /sportmodestate older than this is "stale"
-    max_state_time_s: 10.0          # per-active-state watchdog -> FAULT
-    auto_reset_s: 0.0               # 0 = FAULT requires manual /recovery_reset; >0 auto-clears
-    escalate_to_recovery_stand: true # use RecoveryStand(1006) if a FALL is detected
-    use_damp_on_fault: true         # issue Damp(1001) on FAULT/ESTOP (soft e-stop)
-    tip_roll_deg: 50.0              # |roll| beyond this => FALLEN (escalate)
-    tip_pitch_deg: 50.0
-    min_soc_pct: 10.0               # gate RecoveryStand on battery %
-
-    # ---- recovery strategy policy (intelligent recovery) ----
-    # The RECOVERING state runs strategies in order, re-checking the detector after each
-    # (closed loop). Order is detector-aware: gentle first, escalate last. Every magnitude is
-    # a TUNABLE DESIGN ASSUMPTION (below the verified 0.3 m/s demo) — validate on hardware.
-    active_confidence_min: 0.6      # min detector confidence to attempt Move-based strategies
-    high_intensity_thresh: 0.8      # intensity >= this => conservative: skip active Move, escalate
-    intensity_min_scale: 0.5        # motion-magnitude floor at intensity=1 (gentler when more stuck)
-    enable_balance_stand: true
-    enable_weight_shift: true       # Euler body-tilt (CoG-shift APPROXIMATION; not per-leg unload)
-    enable_small_reverse: true      # Move vx<0 (front snag) / vx>0 (rear snag)
-    enable_small_sidestep: true     # Move vy away from snagged side
-    enable_rotate: true             # Move vyaw (direction is a guess — wrap chirality unknown)
-    # motion magnitudes (Move = body-frame velocity, verified api_id 1008)
-    reverse_speed: 0.15             # m/s
-    reverse_duration_s: 0.6
-    sidestep_speed: 0.15            # m/s
-    sidestep_duration_s: 0.6
-    rotate_speed: 0.4               # rad/s
-    rotate_duration_s: 0.5
-    # weight-shift body tilt (Euler verified api_id 1007; ranges roll/pitch +/-0.75, yaw +/-1.5 rad)
-    weightshift_roll: 0.2           # rad  (sign convention UNVERIFIED — confirm on hardware)
-    weightshift_pitch: 0.2          # rad
-    weightshift_hold_s: 1.0
-
-    # ---- topics ----
+    # Topic published by the detector node.
     entanglement_topic: "/entanglement_state"
-    status_topic: "/recovery_status"
-    sport_request_topic: "/api/sport/request"
-    sport_response_topic: "/api/sport/response"
-    sportmode_topic: "/sportmodestate"
-    lowstate_topic: "/lowstate"
-    estop_topic: "/recovery_estop"
-    reset_topic: "/recovery_reset"
+
+    # Ignore alarms whose maximum per-leg intensity is below this value.
+    # 0.0 = trigger on any debounced alarm (the detector's own threshold/debounce is the filter).
+    min_intensity: 0.0
+
+    # Consecutive qualifying alarm messages required before committing to the jump.
+    # The detector output is already debounced, so this is a small extra guard against a
+    # single stray frame triggering a high-consequence jump.
+    confirm_count: 3

@@ -1,7 +1,10 @@
-"""Launch the detector AND the recovery node together (full pipeline).
+"""Launch the detector AND the front-jump recovery node together (full pipeline).
 
-  ros2 launch entanglement_recovery detector_and_recovery.launch.py            # dry-run
-  ros2 launch entanglement_recovery detector_and_recovery.launch.py enable_actuation:=true
+  ros2 launch entanglement_recovery detector_and_recovery.launch.py
+  ros2 launch entanglement_recovery detector_and_recovery.launch.py network_interface:=eth0
+
+WARNING: on a sustained entanglement alarm the robot performs a real front jump.
+Ensure flat ground, clearance ahead, the robot standing, and adequate battery.
 """
 import os
 
@@ -17,12 +20,14 @@ def generate_launch_description():
     rec_share = get_package_share_directory("entanglement_recovery")
     det_cfg = os.path.join(det_share, "config", "config.yaml")
     rec_cfg = os.path.join(rec_share, "config", "recovery.yaml")
-    enable = LaunchConfiguration("enable_actuation")
+    iface = LaunchConfiguration("network_interface")
     return LaunchDescription([
-        DeclareLaunchArgument("enable_actuation", default_value="false"),
+        DeclareLaunchArgument(
+            "network_interface", default_value="eth0",
+            description="Interface for the Unitree SDK2 DDS (Go2 internal ethernet = eth0)"),
         Node(package="entanglement_detector", executable="entanglement_node",
              name="entanglement_detector", output="screen", parameters=[det_cfg]),
         Node(package="entanglement_recovery", executable="recovery_node",
              name="entanglement_recovery", output="screen",
-             parameters=[rec_cfg, {"enable_actuation": enable}]),
+             parameters=[rec_cfg, {"network_interface": iface}]),
     ])

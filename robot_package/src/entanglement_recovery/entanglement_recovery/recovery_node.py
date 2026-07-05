@@ -1,170 +1,223 @@
 #!/usr/bin/env python3
-"""ROS 2 recovery orchestrator node.
+"""One-shot front-jump recovery for the leg-entanglement detector.
 
-Subscribes the detector's /entanglement_state, ticks the pure RecoveryFSM on a timer using
-robot telemetry (/sportmodestate, /lowstate) and Sport API responses, and executes the FSM's
-commands via SportClient. Publishes /recovery_status. The detector is untouched.
+Behaviour
+---------
+    NORMAL  --(sustained entanglement alarm)-->  perform ONE front jump  -->  LATCHED
+    LATCHED --(ros2 service call /recovery/reset)-->  NORMAL
 
-SAFETY: actuation is OFF by default (`enable_actuation:=false`) — the FSM runs and logs the
-commands it WOULD send (dry-run), enabling safe validation. Set true to actuate the robot.
-Python 3.8 compatible.
+On the first *sustained* entanglement alarm the robot performs a single Unitree
+front jump and then latches: every subsequent alarm is ignored until an operator
+clears the latch with
+
+    ros2 service call /recovery/reset std_srvs/srv/Trigger
+
+so the robot never jumps in a loop for a continuous entanglement.
+
+Why a subprocess?
+-----------------
+Actuation goes through the Unitree SDK2 (``unitree_sdk2py``) running in a child
+process launched with a CLEANED DDS environment. The SDK needs its own
+CycloneDDS participant on the robot's internal interface (``eth0``); the ROS 2
+node's DDS env vars (``CYCLONEDDS_URI`` etc.) would otherwise block the SDK's
+``ChannelFactoryInitialize``. The worker is pre-started at node init so the SDK
+handshake is complete before the first alarm (zero added latency), and it is
+kept alive so a post-reset re-arm is instant.
+
+SAFETY
+------
+A front jump is a dynamic maneuver. Run only on flat, high-friction ground with
+clear space ahead, the robot already standing, and adequate battery. This node
+issues *only* the front jump: it never streams commands and never sends Damp,
+StopMove, or pose changes, so it cannot make the robot suddenly collapse. The
+jump fires exactly once per latch.
 """
 from __future__ import annotations
 
-import json
-import time
+import enum
+import os
+import select as _select
+import subprocess
+import sys
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from std_msgs.msg import String, Empty
+from std_srvs.srv import Trigger
 
 from entanglement_interfaces.msg import EntanglementState
 
-from .recovery_fsm import RecoveryFSM, RecoveryConfig
-from .states import Command, Detection, State, MotionPlan, MotionStep
-from .robot_state import RobotStateMonitor
-from .sport_client import SportClient
-from .plan_runner import PlanRunner
-from . import sport_api as API
+
+class _State(enum.Enum):
+    NORMAL = "NORMAL"
+    LATCHED = "LATCHED"
 
 
-class RecoveryNode(Node):
+_WORKER_SCRIPT = os.path.join(os.path.dirname(__file__), "sport_worker.py")
+
+
+def _clean_env():
+    """Strip ROS 2 / DDS env vars that block the Unitree SDK's CycloneDDS init."""
+    env = os.environ.copy()
+    for key in ("CYCLONEDDS_URI", "RMW_IMPLEMENTATION",
+                "FASTRTPS_DEFAULT_PROFILES_FILE",
+                "RMW_FASTRTPS_USE_QOS_FROM_XML"):
+        env.pop(key, None)
+    return env
+
+
+class FrontJumpRecoveryNode(Node):
+    """Triggers a single front jump on a sustained entanglement alarm.
+
+    Parameters (see config/recovery.yaml):
+        network_interface   str    Interface for the Unitree SDK2 DDS (e.g. "eth0").
+        entanglement_topic  str    Topic published by the detector node.
+        min_intensity       float  Ignore alarms whose max per-leg intensity is below this
+                                    (0.0 = trigger on any debounced alarm).
+        confirm_count       int    Consecutive qualifying alarm messages required before
+                                    committing to the jump (guards against a lone stray frame;
+                                    the detector is already debounced, so this is small).
+    """
+
     def __init__(self):
         super().__init__("entanglement_recovery")
+
         p = self.declare_parameter
+        self._iface = p("network_interface", "eth0").value
+        topic = p("entanglement_topic", "/entanglement_state").value
+        self._min_intensity = float(p("min_intensity", 0.0).value)
+        self._confirm_count = max(1, int(p("confirm_count", 3).value))
 
-        # ---- config -> RecoveryConfig (no magic numbers; all from params/yaml) ----
-        cfg = RecoveryConfig(
-            confirmation_time_s=float(p("confirmation_time_s", 0.5).value),
-            command_timeout_s=float(p("command_timeout_s", 1.0).value),
-            retry_limit=int(p("retry_limit", 2).value),
-            stop_settle_s=float(p("stop_settle_s", 0.5).value),
-            recovery_settle_s=float(p("recovery_settle_s", 2.0).value),
-            verification_duration_s=float(p("verification_duration_s", 1.5).value),
-            verify_timeout_s=float(p("verify_timeout_s", 4.0).value),
-            resume_delay_s=float(p("resume_delay_s", 1.0).value),
-            cooldown_s=float(p("cooldown_s", 5.0).value),
-            robot_state_timeout_s=float(p("robot_state_timeout_s", 0.5).value),
-            max_state_time_s=float(p("max_state_time_s", 10.0).value),
-            auto_reset_s=float(p("auto_reset_s", 0.0).value),
-            confidence_min=float(p("confidence_min", 0.0).value),
-            escalate_to_recovery_stand=bool(p("escalate_to_recovery_stand", True).value),
-            use_damp_on_fault=bool(p("use_damp_on_fault", True).value),
-            tip_roll_deg=float(p("tip_roll_deg", 50.0).value),
-            tip_pitch_deg=float(p("tip_pitch_deg", 50.0).value),
-            min_soc_pct=float(p("min_soc_pct", 10.0).value),
-            # ---- strategy policy ----
-            active_confidence_min=float(p("active_confidence_min", 0.6).value),
-            high_intensity_thresh=float(p("high_intensity_thresh", 0.8).value),
-            intensity_min_scale=float(p("intensity_min_scale", 0.5).value),
-            enable_balance_stand=bool(p("enable_balance_stand", True).value),
-            enable_weight_shift=bool(p("enable_weight_shift", True).value),
-            enable_small_reverse=bool(p("enable_small_reverse", True).value),
-            enable_small_sidestep=bool(p("enable_small_sidestep", True).value),
-            enable_rotate=bool(p("enable_rotate", True).value),
-            reverse_speed=float(p("reverse_speed", 0.15).value),
-            reverse_duration_s=float(p("reverse_duration_s", 0.6).value),
-            sidestep_speed=float(p("sidestep_speed", 0.15).value),
-            sidestep_duration_s=float(p("sidestep_duration_s", 0.6).value),
-            rotate_speed=float(p("rotate_speed", 0.4).value),
-            rotate_duration_s=float(p("rotate_duration_s", 0.5).value),
-            weightshift_roll=float(p("weightshift_roll", 0.2).value),
-            weightshift_pitch=float(p("weightshift_pitch", 0.2).value),
-            weightshift_hold_s=float(p("weightshift_hold_s", 1.0).value),
-        )
-        self.cfg = cfg
-        self.enable_actuation = bool(p("enable_actuation", False).value)
-        self.control_rate_hz = float(p("control_rate_hz", 50.0).value)
-        auto_arm = bool(p("auto_arm", True).value)
+        self._state = _State.NORMAL
+        self._consec = 0                 # consecutive qualifying alarms (pre-latch)
+        self._worker: subprocess.Popen | None = None
+        self._worker_ready = False
 
-        # ---- topics ----
-        ent_topic = p("entanglement_topic", "/entanglement_state").value
-        status_topic = p("status_topic", "/recovery_status").value
-        sport_req = p("sport_request_topic", API.TOPIC_SPORT_REQUEST).value
-        sport_resp = p("sport_response_topic", API.TOPIC_SPORT_RESPONSE).value
-        sportmode = p("sportmode_topic", API.TOPIC_SPORT_MODE_STATE).value
-        lowstate = p("lowstate_topic", API.TOPIC_LOW_STATE).value
-        estop_topic = p("estop_topic", "/recovery_estop").value
-        reset_topic = p("reset_topic", "/recovery_reset").value
+        self.create_subscription(EntanglementState, topic, self._on_entanglement, 10)
+        self.create_service(Trigger, "/recovery/reset", self._handle_reset)
+        self._watchdog = self.create_timer(0.5, self._watchdog_tick)
 
-        # ---- wiring ----
-        self.fsm = RecoveryFSM(cfg)
-        self.robot = RobotStateMonitor(self, sportmode, lowstate, self.get_logger())
-        self.sport = SportClient(self, sport_req, sport_resp, self.enable_actuation, self.get_logger())
-        self.runner = None   # active MotionPlan executor (PlanRunner) or None
+        self._launch_worker()   # pre-start so the SDK is ready before the first alarm
 
-        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT,
-                         history=HistoryPolicy.KEEP_LAST)
-        self.create_subscription(EntanglementState, ent_topic, self._on_detection, qos)
-        self.create_subscription(Empty, estop_topic, lambda _m: self.fsm.request_estop(), 10)
-        self.create_subscription(Empty, reset_topic, lambda _m: self.fsm.reset(time.monotonic()), 10)
-        self.status_pub = self.create_publisher(String, status_topic, 10)
-
-        if auto_arm:
-            self.fsm.arm(time.monotonic())
-        self._last_state = None
-        self.timer = self.create_timer(1.0 / max(self.control_rate_hz, 1.0), self._tick)
         self.get_logger().warn(
-            "entanglement_recovery up | actuation={} | strategy=StopMove->BalanceStand "
-            "(escalate RecoveryStand on fall) | sub={} | sport_req={}".format(
-                "ENABLED" if self.enable_actuation else "DRY-RUN (no commands sent)",
-                ent_topic, sport_req))
+            "front-jump recovery ready | topic={} iface={} min_intensity={:.2f} "
+            "confirm={} | jumps ONCE per alarm; reset: "
+            "ros2 service call /recovery/reset std_srvs/srv/Trigger".format(
+                topic, self._iface or "auto", self._min_intensity, self._confirm_count))
 
-    # ---- callbacks ----
-    def _on_detection(self, msg):
-        # intensity drives the recovery aggressiveness policy: use the alarmed leg's intensity,
-        # else the max across legs (so it is never silently 0 / policy-dead).
-        per_leg = {"FR": msg.fr_intensity, "FL": msg.fl_intensity,
-                   "RR": msg.rr_intensity, "RL": msg.rl_intensity}
-        leg = str(msg.alarm_leg)
-        intensity = float(per_leg.get(leg, max(per_leg.values())))
-        self.fsm.on_detection(Detection(
-            entangled=bool(msg.entangled), confidence=float(msg.confidence),
-            alarm_leg=leg, intensity=intensity, stamp=time.monotonic()))
+    # ------------------------------------------------------------------ worker
+    def _launch_worker(self):
+        if self._worker is not None and self._worker.poll() is None:
+            return
+        try:
+            self._worker = subprocess.Popen(
+                [sys.executable, _WORKER_SCRIPT, self._iface],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, env=_clean_env())
+            self._worker_ready = False
+            self.get_logger().info(
+                "[JUMP] sport_worker launching (pid={})...".format(self._worker.pid))
+        except Exception as exc:
+            self.get_logger().error("[JUMP] failed to launch sport_worker: {}".format(exc))
+            self._worker = None
 
-    def _tick(self):
-        now = time.monotonic()
-        self.fsm.on_robot_state(self.robot.get(
-            now, self.cfg.robot_state_timeout_s, self.cfg.tip_roll_deg, self.cfg.tip_pitch_deg))
+    def _send(self, cmd):
+        if self._worker is None or self._worker.poll() is not None:
+            return False
+        try:
+            self._worker.stdin.write(cmd + "\n")
+            self._worker.stdin.flush()
+            return True
+        except Exception:
+            return False
 
-        # 1) advance an in-flight motion plan; report completion to the FSM.
-        if self.runner is not None:
-            self.fsm.heartbeat_inflight(now)   # keep the FSM command-timeout from racing the plan
-            status = self.runner.tick(now)
-            if status in ("done", "failed"):
-                self.fsm.on_command_result(self.runner.command, status == "done")
-                self.runner = None
+    def _kill_worker(self):
+        if self._worker is None:
+            return
+        self._send("quit")
+        try:
+            self._worker.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            self._worker.kill()
+        self._worker = None
+        self._worker_ready = False
 
-        # 2) tick the FSM. While a plan runs the FSM is awaiting and returns NONE.
-        cmd = self.fsm.update(now)
-        if cmd != Command.NONE and self.runner is None:
-            if self.fsm.state in (State.STOPPING, State.RECOVERING):
-                # awaiting command -> execute its MotionPlan and ack on completion
-                plan = self.fsm.current_motion_plan() if self.fsm.state == State.RECOVERING else None
-                if plan is None:
-                    plan = MotionPlan("stop", (MotionStep("STOP_MOVE"),))
-                self.runner = PlanRunner(plan, cmd, self.sport.send_api, self.sport.pop_error, now)
-            else:
-                # direct emit (Damp from ESTOP / FAULT / watchdog) — no ack expected
-                self.sport.send(cmd)
-        self._publish_status()
+    # ------------------------------------------------------------------ watchdog
+    def _watchdog_tick(self):
+        w = self._worker
+        if w is None:
+            self._launch_worker()
+            return
+        if w.poll() is not None:                       # worker died
+            self.get_logger().warn("[JUMP] sport_worker exited — relaunching.")
+            self._worker = None
+            self._launch_worker()
+            return
+        if not self._worker_ready:                     # drain the READY/ERROR/DONE handshake
+            r, _, _ = _select.select([w.stdout], [], [], 0)
+            if r:
+                line = w.stdout.readline().strip()
+                if line == "READY":
+                    self._worker_ready = True
+                    self.get_logger().info("[JUMP] sport_worker ready (SDK initialised).")
+                elif line.startswith("ERROR"):
+                    self.get_logger().error("[JUMP] sport_worker {}".format(line))
+        else:
+            r, _, _ = _select.select([w.stdout], [], [], 0)
+            if r:
+                line = w.stdout.readline().strip()
+                if line:
+                    self.get_logger().info("[JUMP] sport_worker: {}".format(line))
 
-    def _publish_status(self):
-        d = self.fsm.diagnostics(self.enable_actuation)
-        msg = String()
-        msg.data = json.dumps({
-            "state": d.state, "last_command": d.last_command, "detail": d.detail,
-            "retries": d.retries, "actuation_enabled": d.actuation_enabled})
-        self.status_pub.publish(msg)
-        if d.state != self._last_state:
-            self.get_logger().info("recovery state -> {} ({})".format(d.state, d.detail))
-            self._last_state = d.state
+    # ------------------------------------------------------------------ alarm
+    def _on_entanglement(self, msg):
+        if self._state is _State.LATCHED:
+            return
+        if not msg.entangled:
+            self._consec = 0
+            return
+        max_intensity = max(msg.fr_intensity, msg.fl_intensity,
+                            msg.rr_intensity, msg.rl_intensity)
+        if max_intensity < self._min_intensity:
+            self._consec = 0
+            return
+
+        self._consec += 1
+        if self._consec < self._confirm_count:
+            return
+
+        if not self._worker_ready:
+            # SDK still initialising; do not latch, so the jump still fires once
+            # the worker is ready and the alarm is still present.
+            self.get_logger().warn("[JUMP] alarm confirmed but SDK not ready yet — waiting.")
+            return
+
+        self.get_logger().error(
+            "[JUMP] FRONT JUMP — leg={} conf={:.3f} intensity={:.3f}".format(
+                msg.alarm_leg or "?", msg.confidence, max_intensity))
+        self._send("jump")
+        self._state = _State.LATCHED     # latch immediately: jump exactly once
+
+    # ------------------------------------------------------------------ reset
+    def _handle_reset(self, _request, response):
+        if self._state is _State.LATCHED:
+            self._state = _State.NORMAL
+            self._consec = 0
+            response.success = True
+            response.message = "Front-jump latch cleared; re-armed for the next alarm."
+            self.get_logger().info("[JUMP] latch cleared — re-armed.")
+        else:
+            response.success = False
+            response.message = "No active latch — nothing to clear."
+        return response
+
+    def destroy_node(self):
+        self._kill_worker()
+        super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = RecoveryNode()
+    node = FrontJumpRecoveryNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
