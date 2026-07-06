@@ -1,10 +1,11 @@
-"""Launch the detector AND the front-jump recovery node together (full pipeline).
+"""Launch the detector AND the recovery node together (full pipeline).
 
   ros2 launch entanglement_recovery detector_and_recovery.launch.py
   ros2 launch entanglement_recovery detector_and_recovery.launch.py network_interface:=eth0
 
-WARNING: on a sustained entanglement alarm the robot performs a real front jump.
-Ensure flat ground, clearance ahead, the robot standing, and adequate battery.
+WARNING: on an entanglement alarm the robot runs the sequence
+stop -> move back -> stop -> front jump -> stop (once). Ensure flat ground, clear space
+behind and ahead of the robot, the robot standing, and adequate battery.
 """
 import os
 

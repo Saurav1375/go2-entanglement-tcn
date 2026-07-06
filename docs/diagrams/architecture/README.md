@@ -1,8 +1,12 @@
 # Architecture Diagrams
 
-Publication-quality architecture diagrams for the Leg-Entanglement Detection & Recovery system,
-authored to **exactly match the implemented code on `main`** (verified against the detector engine,
-recovery FSM, strategy manager, ROS nodes, message/topic definitions, and the TCN model).
+Publication-quality architecture diagrams for the Leg-Entanglement Detection system (the **detector**
+pipeline, ROS nodes, message/topic definitions, and the TCN model).
+
+> ⚠️ **Recovery blocks are legacy.** The recovery portion of the *detailed* figure depicts the older
+> FSM + strategy-manager design that has since been replaced. The current recovery is a **one-shot
+> sequence** (stop → move back → stop → front jump → stop, once per alarm) — see
+> [`../../recovery/RECOVERY.md`](../../recovery/RECOVERY.md). The detector blocks remain accurate.
 
 ## Figures
 

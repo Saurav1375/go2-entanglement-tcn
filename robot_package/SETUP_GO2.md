@@ -3,9 +3,9 @@
 Step-by-step deployment of the leg-entanglement detector on a Unitree GO2
 (Python 3.8, ROS 2, CPU-only).
 
-> **Deploying the full pipeline (detector + intelligent recovery)?** Use
-> **[`RUNBOOK.md`](RUNBOOK.md)** — it covers all three packages, the network/DDS setup, and the
-> staged dry-run→actuated test flow. This file covers the detector alone.
+> **Deploying the full pipeline (detector + recovery)?** Use **[`RUNBOOK.md`](RUNBOOK.md)** — it
+> covers all three packages, the network/DDS setup, and the staged bring-up (the recovery runs the
+> one-shot sequence stop → back → stop → front jump → stop). This file covers the detector alone.
 
 ## 0. Assumptions
 - The GO2 runs ROS 2 (e.g. Foxy on Ubuntu 20.04, Python 3.8) and publishes

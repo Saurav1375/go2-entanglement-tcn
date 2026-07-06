@@ -8,14 +8,13 @@ robot** (CPU-only):
   sample, publishes `/entanglement_state` (entangled flag, calibrated confidence, per-leg
   probabilities, per-leg intensities). Inference uses **numpy + ONNX Runtime** — no training code,
   dataset, pandas, scikit-learn, scipy, or matplotlib.
-- **`entanglement_recovery`** — consumes `/entanglement_state`, runs the **recovery FSM + pluggable
-  StrategyManager**, and (when actuation is enabled) commands verified Sport-API recovery motions;
-  publishes `/recovery_status`. Pure-Python FSM behind thin ROS adapters; **dry-run by default**.
+- **`entanglement_recovery`** — consumes `/entanglement_state` and, on the first alarm, runs **one
+  recovery sequence** (stop → move back → stop → front jump → stop) via the Unitree SDK2, then
+  latches until reset. A thin ROS node drives an SDK2 subprocess; it fires **once per latch**.
 
 > **Deploying on hardware? Follow [`RUNBOOK.md`](RUNBOOK.md)** — the single authoritative procedure
-> (network/DDS, staged dry-run → actuated bring-up). [`SETUP_GO2.md`](SETUP_GO2.md) covers the
-> detector alone. Recovery design/config: parent [`docs/`](../docs) (`RECOVERY_DESIGN.md`,
-> `INTELLIGENT_RECOVERY.md`, `RECOVERY_CONFIG.md`).
+> (network/DDS, staged bring-up). [`SETUP_GO2.md`](SETUP_GO2.md) covers the detector alone. Recovery
+> design/config/safety: [`../docs/recovery/RECOVERY.md`](../docs/recovery/RECOVERY.md).
 
 > The research/training pipeline lives in the parent repository. The model here was
 > exported from it unchanged; performance is identical (validated to ~1e-6, see below).
@@ -46,21 +45,15 @@ robot_package/
     │       ├── engine.py          # ring buffer + inference + debounce + thresholds + gate
     │       ├── lowstate_adapter.py# unitree_go/LowState -> model input
     │       └── node.py            # ROS 2 node
-    └── entanglement_recovery/    # ament_python pkg: recovery FSM + strategies + adapters
-        ├── config/recovery.yaml  # all recovery params (actuation gate, timings, strategies)
+    └── entanglement_recovery/    # ament_python pkg: recovery node + SDK2 worker
+        ├── config/recovery.yaml  # recovery params (iface, confirm_count, back_speed, back_duration)
         ├── launch/recovery.launch.py
         ├── launch/detector_and_recovery.launch.py   # launches detector + recovery together
-        ├── test/{test_recovery_fsm.py, test_plan_runner.py}   # 16 + 3 pure tests
         └── entanglement_recovery/
-            ├── states.py          # enums + Detection/RobotState/RecoveryContext/MotionPlan (pure)
-            ├── recovery_fsm.py    # safety-critical FSM (pure); RECOVERING -> StrategyManager
-            ├── strategies.py      # 7 strategies + MotionPlan builders (pure)
-            ├── strategy_manager.py# detector-aware ordering policy (pure)
-            ├── plan_runner.py     # ONESHOT/STREAM/HOLD step execution over ticks (pure)
-            ├── sport_api.py       # verified Sport-API ids + topics + mode map (pure)
-            ├── sport_client.py    # ROS: Command -> /api/sport/request + dry-run gate
-            ├── robot_state.py     # ROS: /sportmodestate(+/lowstate) -> RobotState/Posture
-            └── recovery_node.py   # ROS orchestrator -> /recovery_status
+            ├── recovery_node.py   # ROS node: /entanglement_state -> run sequence once -> latch;
+            │                      #           exposes /recovery/reset; launches the SDK2 subprocess
+            └── sport_worker.py    # Unitree SDK2 subprocess (cleaned DDS env): runs the sequence
+                                   #   StopMove -> Move(back) -> StopMove -> FrontJump -> StopMove
 ```
 
 ---
@@ -122,9 +115,10 @@ source install/setup.bash
 ros2 launch entanglement_detector entanglement.launch.py
 ros2 topic echo /entanglement_state
 
-# 3b. or the full pipeline (detector + recovery; dry-run by default — no motion)
-ros2 launch entanglement_recovery detector_and_recovery.launch.py
-ros2 topic echo /recovery_status
+# 3b. or the full pipeline (detector + recovery) — on an alarm the robot runs the sequence
+#     stop -> move back -> stop -> front jump -> stop (once). Clear space + e-stop in hand.
+ros2 launch entanglement_recovery detector_and_recovery.launch.py network_interface:=eth0
+ros2 service call /recovery/reset std_srvs/srv/Trigger   # re-arm after a recovery
 ```
 
 ---
@@ -154,12 +148,17 @@ Relative paths resolve against the installed package share directory.
 
 ### Recovery (`entanglement_recovery/config/recovery.yaml`)
 
-`enable_actuation` (default **`false`** — dry-run), confirmation/cooldown/retry/watchdog timings,
-posture/SOC gates (`tip_*_deg`, `min_soc_pct`), and the per-strategy enables/magnitudes
-(`active_confidence_min`, `high_intensity_thresh`, `reverse_*`, `sidestep_*`, `rotate_*`,
-`weightshift_*`). Every key is documented in **[`../docs/RECOVERY_CONFIG.md`](../docs/RECOVERY_CONFIG.md)**.
-The motion directions/magnitudes and the Euler weight-shift **sign convention** are design
-assumptions to validate on hardware (RUNBOOK Tier C).
+| key | meaning | default |
+|---|---|---|
+| `network_interface` | interface for the SDK2 DDS (Go2 internal ethernet) | `eth0` |
+| `entanglement_topic` | detector output topic | `/entanglement_state` |
+| `min_intensity` | ignore alarms below this max per-leg intensity (0 = any) | `0.0` |
+| `confirm_count` | consecutive alarm messages before acting (1 = first alarm, no latency) | `1` |
+| `back_speed` | backward speed (m/s) for the "move back" step | `0.3` |
+| `back_duration` | duration (s) of the "move back" step | `0.5` |
+
+The `back_speed` / `back_duration` values and the front jump itself are design assumptions to
+validate on hardware. Full design + safety: **[`../docs/recovery/RECOVERY.md`](../docs/recovery/RECOVERY.md)**.
 
 ---
 
@@ -197,14 +196,14 @@ and verifies the exports reproduce the eager model.
 
 - **CPU-only**: no GPU required; ONNX Runtime CPU provider is used.
 - **Python 3.8 / ROS 2**: runtime code is 3.8-compatible (no 3.9+ syntax).
-- **Unitree messages**: `unitree_go/msg/LowState` (detector) and `unitree_api/msg/Request` +
-  `unitree_go/msg/SportModeState` (recovery) must be available on the robot (they are, on the GO2
-  ROS 2 stack). The detector adapter reads `motor_state[].q/dq/tau_est`, `foot_force[]`, and
-  `imu_state.{rpy,gyroscope,accelerometer}`.
+- **Unitree messages / SDK**: the detector needs `unitree_go/msg/LowState` (reads
+  `motor_state[].q/dq/tau_est`, `foot_force[]`, `imu_state.{rpy,gyroscope,accelerometer}`). Recovery
+  needs the **Unitree SDK2** (`unitree_sdk2py`) installed into the ROS 2 interpreter; it drives
+  `SportClient` directly (not the ROS `/api/sport/request` topic) from a subprocess on `eth0`.
 - **Detector is observe-only**: it only publishes a detection topic; it sends no motor commands.
-- **Recovery can command motion but ships disabled**: `enable_actuation` defaults `false` (dry-run —
-  logs intended commands, sends nothing). Set it true only after the dry-run validation in
-  `RUNBOOK.md`, with clearance and an e-stop in hand. Motion directions/magnitudes are unproven
-  design assumptions until hardware-validated.
+- **Recovery commands motion on an alarm**: it runs the sequence stop → back → stop → front jump →
+  stop **once per latch**. The sequence ends in a front jump — only run the recovery node with clear
+  space behind/ahead, the robot standing, adequate battery, and an e-stop in hand. The motions are
+  unproven design assumptions until hardware-validated.
 
 License: MIT (see parent repository).

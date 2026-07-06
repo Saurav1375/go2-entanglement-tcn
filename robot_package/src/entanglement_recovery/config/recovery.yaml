@@ -1,4 +1,5 @@
-# Front-jump recovery configuration.
+# Entanglement recovery configuration.
+# On an alarm the robot runs one sequence: stop -> move back -> stop -> front jump -> stop.
 entanglement_recovery:
   ros__parameters:
     # Network interface for the Unitree SDK2 DDS transport.
@@ -13,8 +14,11 @@ entanglement_recovery:
     # 0.0 = trigger on any debounced alarm (the detector's own threshold/debounce is the filter).
     min_intensity: 0.0
 
-    # Consecutive qualifying alarm messages required before committing to the jump.
-    # 1 = jump on the FIRST detection (no added latency); the detector output is already
-    # debounced, so a single message is a confirmed detection. Raise only if you want extra
-    # confirmation at the cost of a few milliseconds.
+    # Consecutive qualifying alarm messages required before acting.
+    # 1 = act on the FIRST detection (no added latency); the detector output is already debounced,
+    # so a single message is a confirmed detection. Raise only if you want extra confirmation.
     confirm_count: 1
+
+    # "Move back" step of the sequence.
+    back_speed: 0.3        # backward speed, m/s (magnitude)
+    back_duration: 0.5     # seconds to move backward before the jump

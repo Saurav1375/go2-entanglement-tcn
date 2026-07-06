@@ -1,12 +1,13 @@
-"""Launch the front-jump recovery node alone (assumes the detector is already running).
+"""Launch the recovery node alone (assumes the detector is already running).
 
     ros2 launch entanglement_recovery recovery.launch.py
 
 Optionally override the network interface used by the Unitree SDK2:
     ros2 launch entanglement_recovery recovery.launch.py network_interface:=eth0
 
-WARNING: this node actuates the robot (a real front jump) on a sustained
-entanglement alarm. Ensure flat ground, clearance ahead, and adequate battery.
+WARNING: this node actuates the robot on an entanglement alarm, running the sequence
+stop -> move back -> stop -> front jump -> stop (once). Ensure flat ground, clear space
+behind and ahead of the robot, the robot standing, and adequate battery.
 """
 import os
 

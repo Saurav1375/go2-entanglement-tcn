@@ -1,6 +1,6 @@
 # Verified Fact Sheet — Entanglement Detection Paper (source of truth)
 
-All values verified against code/config/artifacts on 2026-07-01. Where `docs/summary.txt`
+All values verified against code/config/artifacts on 2026-07-01. Where `docs/detection/summary.txt`
 disagrees with the implementation, the implementation value is used and the disagreement is
 noted. **Do not state anything outside this sheet as a measured fact.**
 

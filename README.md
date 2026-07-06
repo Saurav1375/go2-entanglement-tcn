@@ -1,15 +1,16 @@
 # Leg-Entanglement Detection & Recovery for the Unitree GO2
 
 Real-time detection of **leg entanglement** (a leg caught in a wire/net or grabbed by hand) on a
-Unitree GO2 quadruped — from proprioceptive `/lowstate` data only — and an **intelligent recovery**
-system that tries to free the snagged leg using verified Unitree Sport-API motions.
+Unitree GO2 quadruped — from proprioceptive `/lowstate` data only — and a **one-shot recovery**
+that, on an alarm, runs a single sequence — **stop → move back → stop → front jump → stop** — to free
+the snagged leg via the Unitree SDK2.
 
 The repository ships two cooperating halves:
 
 | | what | where | runtime |
 |---|---|---|---|
 | **1. Detector** | a multi-task **causal TCN** that predicts, at every timestep, *whether* a leg is entangled, *which* leg (FR/FL/RR/RL), and *how severe* (0–1 intensity) | research in [`ml/`](ml/), deploy in [`robot_package/`](robot_package/) | PyTorch (research) / numpy + ONNX (robot) |
-| **2. Recovery** | a safety-gated **recovery FSM + pluggable strategy manager** that consumes the detector output and commands recovery motions in a closed loop | [`robot_package/src/entanglement_recovery/`](robot_package/src/entanglement_recovery/) | pure-Python FSM + thin ROS 2 adapters |
+| **2. Recovery** | a **one-shot recovery sequence** (stop → back → stop → front jump → stop) that fires once per alarm and latches until reset | [`robot_package/src/entanglement_recovery/`](robot_package/src/entanglement_recovery/) | Unitree SDK2 subprocess + thin ROS 2 node |
 
 The detector is causal and runs on a sliding window, so the exact code path validated offline is
 the one wrapped in the live ROS 2 node — no model logic changes between research and robot.
@@ -41,47 +42,41 @@ the one wrapped in the live ROS 2 node — no model logic changes between resear
 
 ## System architecture
 
-End to end, proprioception flows into a detection topic, which drives a recovery FSM that emits
-verified Sport-API motion commands — every motion gated behind a dry-run flag by default.
+End to end, proprioception flows into a detection topic; on the first alarm the recovery node runs
+one fixed sequence through the Unitree SDK2, then latches until an operator resets it.
 
 ```
                        Unitree GO2 (ROS 2 / Unitree stack)
    ┌─────────────────────────────────────────────────────────────────────────────┐
-   │  /lowstate (unitree_go/LowState, ~500 Hz)   /sportmodestate    /api/sport/*   │
-   └───────┬──────────────────────────────────────────▲───────────────────▲───────┘
-           │ motor q/dq/tau + foot force + IMU         │ posture / SOC      │ Request
-           ▼                                           │                    │
-   ┌──────────────────────┐                            │                    │
-   │ entanglement_detector │  200-sample ring buffer (0.40 s)               │
-   │  ────────────────────│  → 60-ch window → ONNX TCN                      │
-   │ causal multi-task TCN │  → calibrated confidence + per-leg + intensity │
-   └───────┬──────────────┘  → threshold + debounce + stationarity gate     │
-           │ /entanglement_state                                            │
-           │ (entangled, confidence, per-leg prob+intensity, alarm_leg)     │
-           ▼                                                                │
-   ┌──────────────────────┐     ┌───────────────────────┐                  │
-   │ entanglement_recovery │────▶│   StrategyManager      │  detector-aware │
-   │  ───────────────────  │     │  orders strategies by  │  ordering       │
-   │  Recovery FSM:        │◀────│  alarm_leg/confidence/ │                 │
-   │  IDLE→MONITORING→     │     │  intensity/posture/SOC │                 │
-   │  CONFIRMING→STOPPING→ │     └───────────────────────┘                  │
-   │  RECOVERING→VERIFYING→│     closed loop: try motion → re-check detector │
-   │  RESUMING→COOLDOWN    │     → recovered? next snag : escalate           │
-   │  (+ FAULT / ESTOP)    │─────────────────────────────────────────────────┘
-   └───────┬──────────────┘     SportClient (dry-run gate: enable_actuation=false default)
-           │ /recovery_status
+   │  /lowstate (unitree_go/LowState, ~500 Hz)                    SDK2 SportClient │
+   └───────┬───────────────────────────────────────────────────────────▲─────────┘
+           │ motor q/dq/tau + foot force + IMU                          │ eth0 (cleaned DDS)
+           ▼                                                            │
+   ┌──────────────────────┐                                            │
+   │ entanglement_detector │  200-sample ring buffer (0.40 s)          │
+   │  ────────────────────│  → 60-ch window → ONNX TCN                 │
+   │ causal multi-task TCN │  → calibrated confidence + per-leg + int. │
+   └───────┬──────────────┘  → threshold + debounce + stationarity gate│
+           │ /entanglement_state                                       │
+           │ (entangled, confidence, per-leg prob+intensity, alarm_leg)│
+           ▼                                                           │
+   ┌──────────────────────┐     sport_worker.py (subprocess,          │
+   │ entanglement_recovery │────▶ cleaned DDS env) runs ONCE: ─────────┘
+   │  ───────────────────  │       StopMove → Move(back) → StopMove
+   │  NORMAL ─alarm─▶       │       → FrontJump → StopMove
+   │  run sequence ▶ LATCHED│
+   │  /recovery/reset ▶ NORMAL
+   └───────┬──────────────┘
+           │ logs / ros2 service /recovery/reset
            ▼
-       operator / logs
+       operator
 ```
 
-Publication-quality figures (editable SVG/Graphviz/Mermaid + PNG/PDF) are in
+Publication-quality detector figures (editable SVG/Graphviz/Mermaid + PNG/PDF) are in
 [`docs/diagrams/architecture/`](docs/diagrams/architecture/) — a
-[high-level overview](docs/diagrams/architecture/architecture_highlevel.svg) and a full
-[detailed schematic](docs/diagrams/architecture/architecture_detailed.svg) (every block, topic,
-FSM state, and Sport-API ID). Recovery-specific component/flow diagrams are in
-[`docs/diagrams/`](docs/diagrams/) (see
-[`intelligent_recovery_architecture.md`](docs/diagrams/intelligent_recovery_architecture.md) and
-[`recovery_flow.md`](docs/diagrams/recovery_flow.md)).
+[high-level overview](docs/diagrams/architecture/architecture_highlevel.svg) and a
+[detailed schematic](docs/diagrams/architecture/architecture_detailed.svg). The recovery mechanism
+is documented in [`docs/recovery/RECOVERY.md`](docs/recovery/RECOVERY.md).
 
 ---
 
@@ -100,15 +95,17 @@ python -m ml.evaluate                 # metrics + per-recording replay plots
 
 **B. Deploy detector + recovery on the GO2 (robot, CPU-only, Python 3.8):**
 ```bash
-# follow robot_package/RUNBOOK.md for network/DDS + staged dry-run→actuated bring-up
+# follow robot_package/RUNBOOK.md for network/DDS + staged bring-up
 cd ~/ros2_ws
 colcon build --packages-select entanglement_interfaces entanglement_detector entanglement_recovery
 source install/setup.bash
-ros2 launch entanglement_recovery detector_and_recovery.launch.py   # dry-run by default (no motion)
+ros2 launch entanglement_recovery detector_and_recovery.launch.py network_interface:=eth0
+# on the first alarm: stop -> move back -> stop -> front jump -> stop (once, then latches)
 ```
 
 The single authoritative hardware procedure is **[`robot_package/RUNBOOK.md`](robot_package/RUNBOOK.md)**
-(deploy → Tier A detector-only → Tier B recovery dry-run → Tier C actuated bring-up).
+(deploy → detector-only → recovery bring-up on safe ground). ⚠️ The recovery ends in a **front
+jump** — only launch the recovery node with clear space and an e-stop in hand.
 
 ---
 
@@ -145,9 +142,9 @@ The single authoritative hardware procedure is **[`robot_package/RUNBOOK.md`](ro
 │   └── src/
 │       ├── entanglement_interfaces/   # ament_cmake: EntanglementState.msg
 │       ├── entanglement_detector/     # ament_python: TCN node + numpy/ONNX runtime
-│       └── entanglement_recovery/     # ament_python: recovery FSM + strategies + ROS adapters
+│       └── entanglement_recovery/     # ament_python: recovery node + SDK2 sport_worker subprocess
 │
-└── docs/                          # architecture, reports, design, testing (see doc index)
+└── docs/                          # detection reports (docs/detection/) + recovery (docs/recovery/)
 ```
 
 Derived data (`csv_normalized/`, `csv_labelled/`, `plots/`) and generated artifacts
@@ -191,7 +188,7 @@ There are **15 positive recordings** (one contiguous entanglement event each) an
 **The "Lock" state** (rigid stand-up / held stance) is a **non-entangled negative** — same class as
 Stop, no new output head. It was added in the v2 retrain because the field detector falsely fired
 during the rigid post-stand-up hold; training on Lock data removed that (see
-[`docs/RETRAIN_V2_REPORT.md`](docs/RETRAIN_V2_REPORT.md)).
+[`docs/detection/RETRAIN_V2_REPORT.md`](docs/detection/RETRAIN_V2_REPORT.md)).
 
 Directory layout for the data:
 - `csv/` — raw recordings **(committed)**
@@ -251,36 +248,31 @@ for dense evaluation; **leakage-safe splits grouped by recording** (no window sp
 
 ## The recovery system
 
-`entanglement_recovery` consumes `/entanglement_state` and runs a **pure-Python FSM** behind thin
-ROS 2 adapters (so the safety logic is unit-testable without a robot). The intelligent layer
-redesigns only the `RECOVERING` state into a closed loop driven by a pluggable **StrategyManager**.
+`entanglement_recovery` consumes `/entanglement_state` and, on the first alarm, runs **one fixed
+recovery sequence**, then latches until an operator resets it — so a continuous entanglement can
+never drive a recovery loop.
 
 ```
-IDLE ─▶ MONITORING ─▶ CONFIRMING ─▶ STOPPING ─▶ RECOVERING ─▶ VERIFYING ─▶ RESUMING ─▶ COOLDOWN
-                          │                          ▲   │                     │
-                          │              recovered?  │   │ not recovered →     │
-                          └──────────────────────────┘   └─ next strategy / escalate
-                                       FAULT / ESTOP (Damp) reachable from any state
+NORMAL ──(entanglement alarm)──▶  stop → move back → stop → front jump → stop  ──▶ LATCHED
+LATCHED ──(ros2 service call /recovery/reset)──▶ NORMAL
 ```
 
-- **Detector-aware ordering** (no hardcoded leg/values): the manager orders strategies from the
-  `alarm_leg`, `confidence`, `intensity`, posture, and battery SOC in `RecoveryContext`. Fallen →
-  `[recovery_stand (SOC-gated), emergency_stop]`; otherwise `[balance_stand, weight_shift,
-  (if confidence ≥ active_confidence_min and intensity < high_intensity_thresh) small_reverse /
-  sidestep / rotate, emergency_stop]`.
-- **Verified motions only**: every strategy maps to a `MotionPlan` built from Sport-API actions
-  whose `api_id`+params are verified against unitree_ros2/unitree_sdk2 (BalanceStand 1002, StopMove
-  1003, RecoveryStand 1006, Euler 1007, Move 1008, Damp 1001, …). Their **kinematic** effect is
-  verified; their **disentanglement** effect (and the directions/magnitudes) are design assumptions
-  to validate on hardware — see [`docs/INTELLIGENT_RECOVERY.md`](docs/INTELLIGENT_RECOVERY.md) §
-  "Verified vs Assumed".
-- **Safety**: `enable_actuation` defaults **false** (dry-run — logs would-be commands, sends
-  nothing); `Damp` is the soft e-stop and the terminal FAULT action; recovery never re-enters while
-  active; per-state watchdog → FAULT; cooldown after each cycle.
+- **One-shot, no latency**: `confirm_count` defaults to **1** and the detector output is already
+  debounced, so the sequence starts on the first alarm; the node then latches and ignores every
+  further alarm until `/recovery/reset` (std_srvs/Trigger) is called.
+- **How it actuates**: motion goes through the **Unitree SDK2** (`SportClient`) in a **subprocess
+  launched with a cleaned DDS environment** (strips `CYCLONEDDS_URI`, `RMW_IMPLEMENTATION`,
+  `FASTRTPS_*`) so the SDK's own CycloneDDS participant can come up on `eth0`. The earlier ROS 2
+  `/api/sport/request` path did nothing on hardware (dry-run gate + overridden by the remote
+  controller); driving the SDK2 directly is the proven path.
+- **The sequence**: `StopMove` (discrete, no jitter) → `Move(-back_speed,0,0)` streamed for
+  `back_duration` s → `StopMove` → `FrontJump` (once) → `StopMove`. Each "stop" is a discrete call;
+  only the backward `Move` is streamed.
+- **Safety**: each stop is a discrete `StopMove` so the robot can't suddenly collapse, and the
+  sequence runs once per latch. The step order, one-shot latch, and no-loop guarantee are verified
+  off-robot; the motions themselves are not yet validated on hardware.
 
-Design and rationale: [`docs/RECOVERY_DESIGN.md`](docs/RECOVERY_DESIGN.md),
-[`docs/INTELLIGENT_RECOVERY.md`](docs/INTELLIGENT_RECOVERY.md). Config:
-[`docs/RECOVERY_CONFIG.md`](docs/RECOVERY_CONFIG.md).
+Full design, configuration, and safety: [`docs/recovery/RECOVERY.md`](docs/recovery/RECOVERY.md).
 
 ---
 
@@ -341,9 +333,9 @@ self-test (e.g. `python -m ml.model`, `python -m ml.windowing`, `python -m ml.ca
 **On the robot**, launch detector-only or the full pipeline:
 ```bash
 ros2 launch entanglement_detector entanglement.launch.py                 # detector only
-ros2 launch entanglement_recovery detector_and_recovery.launch.py        # detector + recovery (dry-run)
+ros2 launch entanglement_recovery detector_and_recovery.launch.py        # detector + recovery
 ros2 topic echo /entanglement_state      # per-leg prob + intensity + alarm_leg
-ros2 topic echo /recovery_status         # FSM state, strategy i/N, last command, actuation flag
+ros2 service call /recovery/reset std_srvs/srv/Trigger   # re-arm after a recovery
 ```
 
 ### Live inference (research sketch)
@@ -367,20 +359,19 @@ for sample in lowstate_stream:           # dict: {"FR_hip_q": ..., "foot_FL": ..
 
 | suite | command | count |
 |---|---|---|
-| Recovery FSM (pure, no ROS) | `PYTHONPATH=robot_package/src/entanglement_recovery python3 robot_package/src/entanglement_recovery/test/test_recovery_fsm.py` | 16 |
-| Plan runner (pure) | `PYTHONPATH=robot_package/src/entanglement_recovery python3 robot_package/src/entanglement_recovery/test/test_plan_runner.py` | 3 |
 | ML module self-tests | `python -m ml.model` · `python -m ml.windowing` · `python -m ml.calibration` (etc.) | per-module |
 | Runtime equivalence (robot == research) | `python robot_package/tools/validate_runtime.py --backend onnx` | ~1e-6 match |
 
-Run the recovery suites before any hardware session (Tier-0 in the runbook).
+The recovery logic (step order, one-shot latch, no loop) is verified off-robot with the ROS/SDK
+mocked — see [`docs/recovery/RECOVERY.md`](docs/recovery/RECOVERY.md).
 
 ---
 
 ## Results
 
 The **shipped model is v2** (after adding 5 GO2 deployment recordings incl. the Lock state and the
-first dedicated front-right entanglement). Full before/after: [`docs/RETRAIN_V2_REPORT.md`](docs/RETRAIN_V2_REPORT.md);
-independent re-validation: [`docs/VALIDATION_REPORT_V2.md`](docs/VALIDATION_REPORT_V2.md).
+first dedicated front-right entanglement). Full before/after: [`docs/detection/RETRAIN_V2_REPORT.md`](docs/detection/RETRAIN_V2_REPORT.md);
+independent re-validation: [`docs/detection/VALIDATION_REPORT_V2.md`](docs/detection/VALIDATION_REPORT_V2.md).
 
 **Detection (fixed split, clean original-4 test protocol, raw thr 0.9999):**
 
@@ -428,23 +419,18 @@ one front-both LORO fold weakened. Both are documented for the next data-collect
 
 | doc | what it covers |
 |---|---|
-| **[robot_package/RUNBOOK.md](robot_package/RUNBOOK.md)** | ★ single hardware procedure: deploy → detector-only → recovery dry-run → actuated bring-up |
-| [docs/CONSOLIDATION_REPORT.md](docs/CONSOLIDATION_REPORT.md) | verification results, **deployment checklist**, change summary, assumptions needing real-robot validation |
-| [robot_package/README.md](robot_package/README.md) | deployment-package overview (node, message, config, performance) |
+| **[docs/README.md](docs/README.md)** | ★ documentation index (start here) |
+| **[robot_package/RUNBOOK.md](robot_package/RUNBOOK.md)** | single hardware procedure: deploy → detector-only → recovery bring-up |
+| **[docs/recovery/RECOVERY.md](docs/recovery/RECOVERY.md)** | the recovery mechanism: sequence, SDK2 subprocess, config, safety |
+| [robot_package/README.md](robot_package/README.md) | deployment-package overview (nodes, message, config, performance) |
 | [robot_package/SETUP_GO2.md](robot_package/SETUP_GO2.md) | detector-only setup detail + systemd autostart |
-| [docs/RETRAIN_V2_REPORT.md](docs/RETRAIN_V2_REPORT.md) | **current** model: v2 retrain, the four field fixes, before/after metrics |
-| [docs/VALIDATION_REPORT_V2.md](docs/VALIDATION_REPORT_V2.md) | independent re-validation of v2 (generalization vs memorization) |
-| [docs/RECOVERY_DESIGN.md](docs/RECOVERY_DESIGN.md) | recovery FSM design, Sport-API rationale, safety |
-| [docs/INTELLIGENT_RECOVERY.md](docs/INTELLIGENT_RECOVERY.md) | strategy manager, closed loop, verified-vs-assumed |
-| [docs/RECOVERY_CONFIG.md](docs/RECOVERY_CONFIG.md) | every recovery parameter |
-| [docs/RECOVERY_TESTING.md](docs/RECOVERY_TESTING.md) | scenario matrix → tests, test tiers |
-| [docs/RECOVERY_DELIVERABLES.md](docs/RECOVERY_DELIVERABLES.md) | recovery package file map + deliverables |
-| [docs/diagrams/architecture/](docs/diagrams/architecture/) | **publication-quality** high-level + detailed architecture figures (SVG/DOT/Mermaid + PNG/PDF) |
-| [docs/diagrams/](docs/diagrams/) | recovery state-machine / strategy-flow diagrams |
-| [docs/REPORT.md](docs/REPORT.md) | *(v1, superseded by RETRAIN_V2_REPORT)* baseline detector verification |
-| [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) | *(v1; calibration refreshed for v2, ablation is v1)* reliability study |
-| [docs/PLAN.md](docs/PLAN.md) | original ML design plan |
-| [docs/PUBLISH_REVIEW.md](docs/PUBLISH_REVIEW.md) | *(pre-recovery)* GitHub-publication review of the ML repo |
+| [docs/detection/RETRAIN_V2_REPORT.md](docs/detection/RETRAIN_V2_REPORT.md) | **current** model: v2 retrain, the four field fixes, before/after metrics |
+| [docs/detection/VALIDATION_REPORT_V2.md](docs/detection/VALIDATION_REPORT_V2.md) | independent re-validation of v2 (generalization vs memorization) |
+| [docs/diagrams/architecture/](docs/diagrams/architecture/) | **publication-quality** high-level + detailed detector architecture figures |
+| [docs/detection/REPORT.md](docs/detection/REPORT.md) | *(v1, superseded by RETRAIN_V2_REPORT)* baseline detector verification |
+| [docs/detection/IMPROVEMENTS.md](docs/detection/IMPROVEMENTS.md) | *(v1; calibration refreshed for v2)* reliability study |
+| [docs/detection/PLAN.md](docs/detection/PLAN.md) | original ML design plan |
+| [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | plain-language project overview |
 
 ---
 
@@ -453,23 +439,20 @@ one front-both LORO fold weakened. Both are documented for the next data-collect
 - **Detector — validated offline, not yet on the live robot loop.** Metrics above are
   leakage-safe offline (fixed split + LORO-CV); the v2 runtime equivalence to research is verified
   to ~1e-6, but real-time behavior on the robot's actual CPU/DDS still needs a field session.
-- **Recovery — motion *kinematics* verified, *disentanglement efficacy* NOT.** Every Sport-API
-  command's effect is verified against the SDK, but whether a given motion actually frees a snagged
-  leg — and the chosen directions, magnitudes, and the Euler weight-shift **sign convention** — are
-  **design assumptions**. They must be validated on hardware (RUNBOOK Tier C). Recovery ships
-  **dry-run by default**.
+- **Recovery — logic verified, *disentanglement efficacy* NOT.** The sequence's step order, one-shot
+  latch, and no-loop guarantee are verified off-robot (ROS/SDK mocked). Whether the
+  stop→back→jump sequence actually frees a snagged leg — and the chosen `back_speed`/`back_duration`
+  and the front jump itself — are **design assumptions** to validate on hardware (RUNBOOK).
 - **Data scale:** 15 positive events; FR is positive in only 3 files, which drives most LORO
   variance and the FR precision trade-off. More front-right / front-both captures are the top
   data need.
-- **Telemetry QoS:** posture/SOC-aware behavior needs `/sportmodestate` over BEST_EFFORT QoS; if DDS
-  isn't aligned the FSM degrades to timeouts (see RUNBOOK §3).
 
 ---
 
 ## Future work
 
-- Field-validate the recovery strategies on the GO2 (efficacy, directions, magnitudes) and feed
-  results back into `recovery.yaml` and the strategy ordering policy.
+- Field-validate the recovery sequence on the GO2 (does stop→back→jump free the leg?) and tune
+  `back_speed` / `back_duration` in `recovery.yaml` from the results.
 - Collect more front-right / front-both and rear-leg "hand" recordings across gait regimes to
   rebalance FR precision and reduce LORO variance.
 - Add explicit severity labels to enable supervised intensity regression.
@@ -484,6 +467,6 @@ Released under the [MIT License](LICENSE).
 
 ---
 
-*Data collected from a Unitree GO2. The detector observes and predicts only. The recovery system can
-command motion, but ships disabled (`enable_actuation: false`) and must be validated on hardware
-before actuated use — see [`robot_package/RUNBOOK.md`](robot_package/RUNBOOK.md).*
+*Data collected from a Unitree GO2. The detector observes and predicts only. The recovery node
+commands motion (stop → back → stop → front jump → stop) once per alarm and must be validated on
+hardware before use — see [`robot_package/RUNBOOK.md`](robot_package/RUNBOOK.md).*

@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
-"""One-shot front-jump recovery for the leg-entanglement detector.
+"""One-shot entanglement recovery for the leg-entanglement detector.
 
 Behaviour
 ---------
-    NORMAL  --(sustained entanglement alarm)-->  perform ONE front jump  -->  LATCHED
+    NORMAL  --(entanglement alarm)-->  run ONE recovery sequence  -->  LATCHED
     LATCHED --(ros2 service call /recovery/reset)-->  NORMAL
 
-On the first *sustained* entanglement alarm the robot performs a single Unitree
-front jump and then latches: every subsequent alarm is ignored until an operator
-clears the latch with
+On the first entanglement alarm the robot runs a single recovery sequence:
+
+    stop  ->  move backward for `back_duration` s  ->  stop  ->  front jump  ->  stop
+
+and then latches: every subsequent alarm is ignored until an operator clears the latch with
 
     ros2 service call /recovery/reset std_srvs/srv/Trigger
 
-so the robot never jumps in a loop for a continuous entanglement.
+so the robot never repeats the sequence in a loop for one continuous entanglement. Because
+`confirm_count` defaults to 1 and the detector output is already debounced, the sequence starts on
+the first alarm with no added latency.
 
 Why a subprocess?
 -----------------
-Actuation goes through the Unitree SDK2 (``unitree_sdk2py``) running in a child
-process launched with a CLEANED DDS environment. The SDK needs its own
-CycloneDDS participant on the robot's internal interface (``eth0``); the ROS 2
-node's DDS env vars (``CYCLONEDDS_URI`` etc.) would otherwise block the SDK's
-``ChannelFactoryInitialize``. The worker is pre-started at node init so the SDK
-handshake is complete before the first alarm (zero added latency), and it is
-kept alive so a post-reset re-arm is instant.
+Actuation goes through the Unitree SDK2 (``unitree_sdk2py``) running in a child process launched with
+a CLEANED DDS environment. The SDK needs its own CycloneDDS participant on the robot's internal
+interface (``eth0``); the ROS 2 node's DDS env vars (``CYCLONEDDS_URI`` etc.) would otherwise block the
+SDK's ``ChannelFactoryInitialize``. The worker is pre-started at node init so the SDK handshake is
+complete before the first alarm.
 
 SAFETY
 ------
-A front jump is a dynamic maneuver. Run only on flat, high-friction ground with
-clear space ahead, the robot already standing, and adequate battery. This node
-issues *only* the front jump: it never streams commands and never sends Damp,
-StopMove, or pose changes, so it cannot make the robot suddenly collapse. The
-jump fires exactly once per latch.
+The sequence ends in a front jump, a dynamic maneuver. Run only on flat, high-friction ground with
+clear space behind and ahead of the robot, the robot already standing, and adequate battery. StopMove
+is issued discretely (not streamed) at each "stop" step to avoid jitter, and the sequence runs exactly
+once per latch.
 """
 from __future__ import annotations
 
@@ -66,17 +67,18 @@ def _clean_env():
     return env
 
 
-class FrontJumpRecoveryNode(Node):
-    """Triggers a single front jump on a sustained entanglement alarm.
+class RecoveryNode(Node):
+    """Runs a single recovery sequence (stop -> back -> stop -> jump -> stop) on an alarm.
 
     Parameters (see config/recovery.yaml):
         network_interface   str    Interface for the Unitree SDK2 DDS (e.g. "eth0").
         entanglement_topic  str    Topic published by the detector node.
         min_intensity       float  Ignore alarms whose max per-leg intensity is below this
                                     (0.0 = trigger on any debounced alarm).
-        confirm_count       int    Consecutive qualifying alarm messages required before
-                                    committing to the jump (guards against a lone stray frame;
-                                    the detector is already debounced, so this is small).
+        confirm_count       int    Consecutive qualifying alarm messages before acting
+                                    (1 = act on the first detection; no added latency).
+        back_speed          float  Backward speed (m/s) for the "move back" step.
+        back_duration       float  Duration (s) of the "move back" step.
     """
 
     def __init__(self):
@@ -87,10 +89,12 @@ class FrontJumpRecoveryNode(Node):
         topic = p("entanglement_topic", "/entanglement_state").value
         self._min_intensity = float(p("min_intensity", 0.0).value)
         self._confirm_count = max(1, int(p("confirm_count", 1).value))
+        self._back_speed = float(p("back_speed", 0.3).value)
+        self._back_duration = float(p("back_duration", 0.5).value)
 
         self._state = _State.NORMAL
         self._consec = 0                 # consecutive qualifying alarms (pre-latch)
-        self._require_clear = False      # after a jump/reset, wait for one non-entangled frame
+        self._require_clear = False      # after a sequence/reset, wait for one non-entangled frame
         self._worker: subprocess.Popen | None = None
         self._worker_ready = False
 
@@ -105,10 +109,11 @@ class FrontJumpRecoveryNode(Node):
         self._launch_worker()   # pre-start so the SDK is ready before the first alarm
 
         self.get_logger().warn(
-            "front-jump recovery ready | topic={} iface={} min_intensity={:.2f} "
-            "confirm={} | jumps ONCE per alarm; reset: "
-            "ros2 service call /recovery/reset std_srvs/srv/Trigger".format(
-                topic, self._iface or "auto", self._min_intensity, self._confirm_count))
+            "recovery ready | topic={} iface={} min_intensity={:.2f} confirm={} | "
+            "on alarm: stop -> back {:.2f}s @ {:.2f} m/s -> stop -> jump -> stop (ONCE); "
+            "reset: ros2 service call /recovery/reset std_srvs/srv/Trigger".format(
+                topic, self._iface or "auto", self._min_intensity, self._confirm_count,
+                self._back_duration, self._back_speed))
 
     # ------------------------------------------------------------------ worker
     def _launch_worker(self):
@@ -116,7 +121,8 @@ class FrontJumpRecoveryNode(Node):
             return
         try:
             self._worker = subprocess.Popen(
-                [sys.executable, _WORKER_SCRIPT, self._iface],
+                [sys.executable, _WORKER_SCRIPT, self._iface,
+                 str(self._back_speed), str(self._back_duration)],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 # Discard the SDK's own (possibly chatty) stderr rather than merging it into
                 # the handshake pipe, so verbose CycloneDDS logging can't back up the pipe and
@@ -124,9 +130,9 @@ class FrontJumpRecoveryNode(Node):
                 stderr=subprocess.DEVNULL, text=True, env=_clean_env())
             self._worker_ready = False
             self.get_logger().info(
-                "[JUMP] sport_worker launching (pid={})...".format(self._worker.pid))
+                "[RECOVERY] sport_worker launching (pid={})...".format(self._worker.pid))
         except Exception as exc:
-            self.get_logger().error("[JUMP] failed to launch sport_worker: {}".format(exc))
+            self.get_logger().error("[RECOVERY] failed to launch sport_worker: {}".format(exc))
             self._worker = None
 
     def _send(self, cmd):
@@ -157,12 +163,12 @@ class FrontJumpRecoveryNode(Node):
             self._launch_worker()
             return
         if w.poll() is not None:                       # worker died
-            self.get_logger().warn("[JUMP] sport_worker exited — relaunching.")
+            self.get_logger().warn("[RECOVERY] sport_worker exited — relaunching.")
             self._worker = None
             self._launch_worker()
             return
         # Drain the worker's stdout each tick (bounded loop) so the pipe never backs up.
-        # Lines are the short handshake tokens READY / ERROR: / DONE <code>.
+        # Lines are the short handshake tokens READY / ERROR: / DONE <codes>.
         for _ in range(20):
             r, _, _ = _select.select([w.stdout], [], [], 0)
             if not r:
@@ -176,11 +182,11 @@ class FrontJumpRecoveryNode(Node):
             if line == "READY":
                 if not self._worker_ready:
                     self._worker_ready = True
-                    self.get_logger().info("[JUMP] sport_worker ready (SDK initialised).")
+                    self.get_logger().info("[RECOVERY] sport_worker ready (SDK initialised).")
             elif line.startswith("ERROR"):
-                self.get_logger().error("[JUMP] sport_worker {}".format(line))
+                self.get_logger().error("[RECOVERY] sport_worker {}".format(line))
             else:
-                self.get_logger().info("[JUMP] sport_worker: {}".format(line))
+                self.get_logger().info("[RECOVERY] sport_worker: {}".format(line))
 
     # ------------------------------------------------------------------ alarm
     def _on_entanglement(self, msg):
@@ -188,11 +194,11 @@ class FrontJumpRecoveryNode(Node):
             return
         if not msg.entangled:
             self._consec = 0
-            self._require_clear = False   # a clear frame re-arms after a jump/reset
+            self._require_clear = False   # a clear frame re-arms after a sequence/reset
             return
-        # After a jump or a reset we require at least one non-entangled frame before counting
-        # toward the next jump, so resetting while the leg is still entangled cannot immediately
-        # re-jump (belt-and-suspenders on top of the LATCHED guard).
+        # After a sequence or a reset we require at least one non-entangled frame before counting
+        # toward the next sequence, so resetting while the leg is still entangled cannot immediately
+        # re-trigger (belt-and-suspenders on top of the LATCHED guard).
         if self._require_clear:
             return
         max_intensity = max(msg.fr_intensity, msg.fl_intensity,
@@ -206,17 +212,18 @@ class FrontJumpRecoveryNode(Node):
             return
 
         if not self._worker_ready:
-            # SDK still initialising; do not latch, so the jump still fires once
+            # SDK still initialising; do not latch, so the sequence still fires once
             # the worker is ready and the alarm is still present.
-            self.get_logger().warn("[JUMP] alarm confirmed but SDK not ready yet — waiting.")
+            self.get_logger().warn("[RECOVERY] alarm confirmed but SDK not ready yet — waiting.")
             return
 
         self.get_logger().error(
-            "[JUMP] FRONT JUMP — leg={} conf={:.3f} intensity={:.3f}".format(
+            "[RECOVERY] entanglement — leg={} conf={:.3f} intensity={:.3f} : "
+            "stop -> back -> stop -> jump -> stop".format(
                 msg.alarm_leg or "?", msg.confidence, max_intensity))
-        self._send("jump")
-        self._state = _State.LATCHED     # latch immediately: jump exactly once
-        self._require_clear = True       # after reset, require a clear frame before any re-jump
+        self._send("recover")
+        self._state = _State.LATCHED     # latch immediately: run the sequence exactly once
+        self._require_clear = True       # after reset, require a clear frame before re-triggering
 
     # ------------------------------------------------------------------ reset
     def _handle_reset(self, _request, response):
@@ -225,9 +232,9 @@ class FrontJumpRecoveryNode(Node):
             self._consec = 0
             self._require_clear = True   # wait for a non-entangled frame before re-arming
             response.success = True
-            response.message = ("Front-jump latch cleared; will re-arm after a non-entangled "
-                                "frame, then act on the next sustained alarm.")
-            self.get_logger().info("[JUMP] latch cleared — will re-arm after a clear frame.")
+            response.message = ("Recovery latch cleared; will re-arm after a non-entangled "
+                                "frame, then act on the next alarm.")
+            self.get_logger().info("[RECOVERY] latch cleared — will re-arm after a clear frame.")
         else:
             response.success = False
             response.message = "No active latch — nothing to clear."
@@ -240,7 +247,7 @@ class FrontJumpRecoveryNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = FrontJumpRecoveryNode()
+    node = RecoveryNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
